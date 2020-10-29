@@ -18,7 +18,7 @@ from torch import nn
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
 
-from data_utils import MetaFolderTwo, split_meta_both, r_at_k, transform_image, transform_text, collate_recipe
+from data_utils import MetaFolderTwo, split_meta_both, r_at_k, np_transform, collate_recipe
 from models import AEMetaModel, MergedMetaModel, MetaModel, TextEncoder, ImageEncoder
 
 
@@ -145,6 +145,7 @@ parser.add_argument('--do-super', action='store_true', help='supervised alignmen
 parser.add_argument('--merge', action='store_true', help='same encoder for both modalities', default=False)
 parser.add_argument('--merge0', action='store_true', help='merge but no metatrain test modality', default=False)
 parser.add_argument('--cuda', default=0, type=int, help='cuda device')
+parser.add_argument('--num-workers', default=4, type=int, help='cuda device')
 parser.add_argument('--margin', default=0.1, type=float, help='margin in loss fn')
 parser.add_argument('--tfr', default=0.5, type=float, help='teacher forcing ratio')
 
@@ -237,7 +238,7 @@ def train_clf_1(net, loss_fn, optimizer, train_iter, iterations, print_train=Fal
         prediction = net.forward1(x1)
         loss = loss_fn(prediction, base_y)
         if print_train:
-            argmax = prediction.max(1)
+            _, argmax = prediction.max(1)
             accuracy = (argmax == base_y).float().mean()
             accuracies.append(accuracy.item())
             print(iteration, ' ', loss, ' ', accuracy)
@@ -314,7 +315,7 @@ def eval_clf_2(net, loss_fn, test_iter, iterations):
             _, _, x2, base_y = Variable_(next(test_iter))
             prediction = net.forward2(x2)
             loss = loss_fn(prediction, base_y)
-            argmax = prediction.max(1)
+            _, argmax = prediction.max(1)
             accuracy = (argmax == base_y).float().mean()
             losses.append(loss.item())
             accuracies.append(accuracy.item())
@@ -330,7 +331,7 @@ def eval_clf_1(net, loss_fn, test_iter, iterations):
             x1, _, _, base_y = Variable_(next(test_iter))
             prediction = net.forward1(x1)
             loss = loss_fn(prediction, base_y)
-            argmax = prediction.max(1)
+            _, argmax = prediction.max(1)
             accuracy = (argmax == base_y).float().mean()
             losses.append(loss.item())
             accuracies.append(accuracy.item())
@@ -349,7 +350,7 @@ if not os.path.exists(log_dir):
 mlr_str = format_e(Decimal(args.meta_lr))
 lrc_str = format_e(Decimal(args.lr_clf))
 lra_str = format_e(Decimal(args.lr_align))
-expt_str = '-%d' % args.test_iterations
+expt_str = '-%d-%d' % (args.iterations, args.test_iterations)
 if args.do_super:
     expt_str += '-sup'
 if args.merge:
@@ -367,7 +368,7 @@ print_log(log_path, log_path)
 idx_dir = '../data/recipe/idxs'
 
 collate_fn = collate_recipe
-all_meta = MetaFolderTwo(transform_x1=transform_image, transform_x2=transform_text)
+all_meta = MetaFolderTwo(transform_x1=np_transform, transform_x2=np_transform)
 
 if args.do_super:
     align_train, align_val, align_test, super_train = split_meta_both(all_meta, validation=args.validation, seed=args.iseed, mk_super=True, verbose=args.verbose, collate_fn=collate_recipe)
@@ -429,8 +430,8 @@ if not args.no_pre:
             new_train_idxs = task_idx_dict['new_train_idxs']
             new_test_idxs = task_idx_dict['new_test_idxs']
             train, val = meta_dataset.get_task_split(character_indices, all_curr_idxs, new_train_idxs, new_test_idxs, train_K=args.train_shots)
-            train_iter = make_infinite(DataLoader(train, args.batch, collate_fn=collate_fn))
-            val_iter = make_infinite(DataLoader(val, args.batch, collate_fn=collate_fn))
+            train_iter = make_infinite(DataLoader(train, args.batch, collate_fn=collate_fn, num_workers=args.num_workers))
+            val_iter = make_infinite(DataLoader(val, args.batch, collate_fn=collate_fn, num_workers=args.num_workers))
             net = meta_net.clone()
             optimizer = get_optimizer(net, args.lr_clf)
             if args.print_train:
@@ -466,7 +467,7 @@ for meta_iteration in range(args.start_meta_iteration, args.meta_iterations):
         net = meta_net.clone()
         optimizer = get_optimizer(net, args.lr_clf, audio_clf_state)
         train = align_train.get_random_task(args.classes, args.train_shots, is_align=False)
-        train_iter = make_infinite(DataLoader(train, args.batch, shuffle=True, collate_fn=collate_fn))
+        train_iter = make_infinite(DataLoader(train, args.batch, shuffle=True, collate_fn=collate_fn, num_workers=args.num_workers))
         if args.print_train:
             loss, acc = train_clf_1(net, cross_entropy, optimizer, train_iter, args.iterations, print_train=args.print_train)
         else:
@@ -481,7 +482,7 @@ for meta_iteration in range(args.start_meta_iteration, args.meta_iterations):
         net = meta_net.clone()
         optimizer = get_optimizer(net, args.lr_clf, audio_clf_state)
         train = align_train.get_random_task(args.classes, args.train_shots, is_align=False)
-        train_iter = make_infinite(DataLoader(train, args.batch, shuffle=True, collate_fn=collate_fn))
+        train_iter = make_infinite(DataLoader(train, args.batch, shuffle=True, collate_fn=collate_fn, num_workers=args.num_workers))
         loss = train_merge_clf(net, cross_entropy, optimizer, train_iter, args.iterations)
         audio_clf_state = optimizer.state_dict()
         meta_net.point_grad_to(net)
@@ -491,7 +492,7 @@ for meta_iteration in range(args.start_meta_iteration, args.meta_iterations):
         net = meta_net.clone()
         optimizer = get_optimizer(net, args.lr_clf, text_clf_state)
         train = align_train.get_random_task(args.classes, args.train_shots)
-        train_iter = make_infinite(DataLoader(train, args.train_align_batch, shuffle=True, collate_fn=collate_fn))
+        train_iter = make_infinite(DataLoader(train, args.train_align_batch, shuffle=True, collate_fn=collate_fn, num_workers=args.num_workers))
         loss = train_ae(net, ae_loss, optimizer, train_iter, args.iterations, teacher_forcing_ratio=args.tfr)
         text_clf_state = optimizer.state_dict()
         meta_net.point_grad_to(net)
@@ -502,7 +503,7 @@ for meta_iteration in range(args.start_meta_iteration, args.meta_iterations):
         net = meta_net.clone()
         optimizer = get_optimizer(net, args.lr_clf, text_clf_state)
         train = align_train.get_random_task(args.classes, args.train_shots, is_align=False)
-        train_iter = make_infinite(DataLoader(train, args.batch, shuffle=True, collate_fn=collate_fn))
+        train_iter = make_infinite(DataLoader(train, args.batch, shuffle=True, collate_fn=collate_fn, num_workers=args.num_workers))
         loss = train_clf_2(net, cross_entropy, optimizer, train_iter, args.iterations)
         text_clf_state = optimizer.state_dict()
         meta_net.point_grad_to(net)
@@ -526,7 +527,7 @@ for meta_iteration in range(args.start_meta_iteration, args.meta_iterations):
         net = meta_net.clone()
         optimizer = get_optimizer(net, args.lr_align, align_state)
         train = align_train.get_random_task(args.classes, args.train_shots, is_align=True)
-        train_iter = make_infinite(DataLoader(train, args.train_align_batch, shuffle=True, collate_fn=collate_fn))
+        train_iter = make_infinite(DataLoader(train, args.train_align_batch, shuffle=True, collate_fn=collate_fn, num_workers=args.num_workers))
         loss = train_align(net, align_loss, optimizer, train_iter, args.iterations, margin=args.margin)
         align_state = optimizer.state_dict()
         meta_net.point_grad_to(net)
@@ -546,8 +547,8 @@ for meta_iteration in range(args.start_meta_iteration, args.meta_iterations):
                 new_train_idxs = task_idx_dict['new_train_idxs']
                 new_test_idxs = task_idx_dict['new_test_idxs']
                 train, val = meta_dataset.get_task_split(character_indices, all_curr_idxs, new_train_idxs, new_test_idxs, train_K=args.train_shots)
-                train_iter = make_infinite(DataLoader(train, args.batch, shuffle=False, collate_fn=collate_fn))
-                val_iter = make_infinite(DataLoader(val, args.batch, shuffle=False, collate_fn=collate_fn))
+                train_iter = make_infinite(DataLoader(train, args.batch, shuffle=False, collate_fn=collate_fn, num_workers=args.num_workers))
+                val_iter = make_infinite(DataLoader(val, args.batch, shuffle=False, collate_fn=collate_fn, num_workers=args.num_workers))
                 net = meta_net.clone()
                 optimizer = get_optimizer(net, args.lr_clf)
                 meta_train_loss = train_clf_1(net, cross_entropy, optimizer, train_iter, args.test_iterations)
