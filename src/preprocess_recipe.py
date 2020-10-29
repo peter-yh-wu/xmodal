@@ -22,7 +22,7 @@ def load_pkl(path):
 
 
 def main():
-    max_shot = 10
+    min_data = 20
 
     data_dir = '../data/recipe'
     fid_to_label_path = os.path.join(data_dir, 'fid_to_label.pkl')
@@ -57,7 +57,7 @@ def main():
         num_data = 0
         label_counts = []
         for label in label_dict:
-            if label_dict[label] > max_shot:
+            if label_dict[label] >= min_data:
                 new_label_dict[label] = label_dict[label]
                 num_data += label_dict[label]
                 label_counts.append(label_dict[label])
