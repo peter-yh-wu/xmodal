@@ -116,9 +116,9 @@ def main():
         paths = [os.path.join(data_dir, 'images', 'img%s.jpg' % fid) for fid in fids]
         with torch.no_grad():
             for path in tqdm(paths):
+                new_path = path.replace('img', '').replace('jpg', 'npy').replace('images', 'new_imgs')
                 x = transform_image(path)
                 x = x.numpy()
-                new_path = path.replace('img', '').replace('images', 'new_imgs')
                 np.save(new_path, x)
 
 if __name__ == '__main__':

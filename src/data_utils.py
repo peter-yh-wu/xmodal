@@ -69,7 +69,7 @@ def transform_image(path):
     return input_tensor
 
 
-def transform_text(path):
+def np_transform(path):
     return np.load(path)
 
 
@@ -105,8 +105,7 @@ def collate_recipe(batch):
         x2 = np.pad(x2, ((0,max_len_2-len(x2)), (0,0)), mode='constant', constant_values=0.0)
         x2s.append(x2)
         y2s.append(y2)
-    x1s = torch.stack(x1s)
-    return x1s, torch.tensor(y1s), torch.tensor(x2s), torch.tensor(y2s)
+    return torch.tensor(x1s), torch.tensor(y1s), torch.tensor(x2s), torch.tensor(y2s)
 
 
 class FewShotTwo(Dataset):
@@ -310,7 +309,7 @@ class MetaFolderTwo(AbstractMetaTwo):
         label_to_int = {}
         for i, label in enumerate(label_list):
             label_to_int[label] = i
-        paths = [os.path.join(data_dir, 'images', 'img%s.jpg' % fid) for fid in fids]
+        paths = [os.path.join(data_dir, 'new_imgs', '%s.npy' % fid) for fid in fids]
         targets = [label_to_int[fid_to_label[fid]] for fid in fids]
         num_labels = len(np.unique(targets))
         grouped_x1s = [[] for _ in range(num_labels)]
