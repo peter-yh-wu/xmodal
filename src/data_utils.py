@@ -316,7 +316,7 @@ class MetaFolderTwo(AbstractMetaTwo):
         grouped_x1s = [[] for _ in range(num_labels)]
         for path, target in zip(paths, targets):
             grouped_x1s[target].append(path)
-        paths = [os.path.join(data_dir, 'text_embs', '%s.jpg' % fid) for fid in fids]
+        paths = [os.path.join(data_dir, 'text_embs', '%s.npy' % fid) for fid in fids]
         grouped_x2s = [[] for _ in range(num_labels)]
         for path, target in zip(paths, targets):
             grouped_x2s[target].append(path)
@@ -324,8 +324,8 @@ class MetaFolderTwo(AbstractMetaTwo):
 
 
 def split_meta_both(all_meta, train=0.8, validation=0.1, test=0.1, seed=0, batch_size=64, num_workers=4, mk_super=False, dept=False, verbose=False, collate_fn=None):
-    data_dir = '../data/recipe'
-    split_idxs_path = os.path.join(data_dir, 'split_idxs_%d.npy' % seed)
+    idx_dir = '../data/recipe/idxs'
+    split_idxs_path = os.path.join(idx_dir, 'split_idxs_%d.npy' % seed)
 
     indices = np.load(split_idxs_path)
     if train >= 0.1:
@@ -352,11 +352,11 @@ def split_meta_both(all_meta, train=0.8, validation=0.1, test=0.1, seed=0, batch
 
     train_align_idxs = None
     if not dept:
-        if os.path.exists(os.path.join(data_dir, 'train_align_idxs_%d.npy' % seed)):
-            train_align_idxs = load_pkl(os.path.join(data_dir, 'train_align_idxs_%d.npy' % seed))
+        if os.path.exists(os.path.join(idx_dir, 'train_align_idxs_%d.npy' % seed)):
+            train_align_idxs = load_pkl(os.path.join(idx_dir, 'train_align_idxs_%d.npy' % seed))
         else:
             train_align_idxs = [list(np.random.choice(len(l), int(len(l)/2), replace=False)) for l in train_x1s]
-            save_pkl(train_align_idxs, os.path.join(data_dir, 'train_align_idxs_%d.npy' % seed))
+            save_pkl(train_align_idxs, os.path.join(idx_dir, 'train_align_idxs_%d.npy' % seed))
 
         if verbose:
             num_align = sum([len(l) for l in train_align_idxs])

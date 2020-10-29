@@ -237,7 +237,7 @@ def train_clf_1(net, loss_fn, optimizer, train_iter, iterations, print_train=Fal
         prediction = net.forward1(x1)
         loss = loss_fn(prediction, base_y)
         if print_train:
-            argmax = prediction.max(1)
+            _, argmax = prediction.max(1)
             accuracy = (argmax == base_y).float().mean()
             accuracies.append(accuracy.item())
             print(iteration, ' ', loss, ' ', accuracy)
@@ -314,7 +314,7 @@ def eval_clf_2(net, loss_fn, test_iter, iterations):
             _, _, x2, base_y = Variable_(next(test_iter))
             prediction = net.forward2(x2)
             loss = loss_fn(prediction, base_y)
-            argmax = prediction.max(1)
+            _, argmax = prediction.max(1)
             accuracy = (argmax == base_y).float().mean()
             losses.append(loss.item())
             accuracies.append(accuracy.item())
@@ -330,7 +330,7 @@ def eval_clf_1(net, loss_fn, test_iter, iterations):
             x1, _, _, base_y = Variable_(next(test_iter))
             prediction = net.forward1(x1)
             loss = loss_fn(prediction, base_y)
-            argmax = prediction.max(1)
+            _, argmax = prediction.max(1)
             accuracy = (argmax == base_y).float().mean()
             losses.append(loss.item())
             accuracies.append(accuracy.item())
@@ -349,7 +349,7 @@ if not os.path.exists(log_dir):
 mlr_str = format_e(Decimal(args.meta_lr))
 lrc_str = format_e(Decimal(args.lr_clf))
 lra_str = format_e(Decimal(args.lr_align))
-expt_str = '-%d' % args.test_iterations
+expt_str = '-%d-%d' % (args.iterations, args.test_iterations)
 if args.do_super:
     expt_str += '-sup'
 if args.merge:
