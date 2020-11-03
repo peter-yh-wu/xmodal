@@ -323,6 +323,9 @@ class MetaFolderTwo(AbstractMetaTwo):
 
 
 def split_meta_both(all_meta, train=0.8, validation=0.1, test=0.1, seed=0, batch_size=64, num_workers=4, mk_super=False, dept=False, verbose=False, collate_fn=None):
+    '''
+    NOTE: validation & test args deprecated
+    '''
     idx_dir = '../data/recipe/idxs'
     split_idxs_path = os.path.join(idx_dir, 'split_idxs_%d.npy' % seed)
 
@@ -331,8 +334,10 @@ def split_meta_both(all_meta, train=0.8, validation=0.1, test=0.1, seed=0, batch
         n_train = int(train * len(all_meta))
     else:
         n_train = int(0.1 * len(all_meta))
-    n_val = int(validation * len(all_meta))
-    n_test = int(test * len(all_meta))
+    n_val = int((len(all_meta) - n_train)/2)
+    n_test = len(all_meta) - n_train - n_val
+    # n_val = int(validation * len(all_meta))
+    # n_test = int(test * len(all_meta))
 
     all_train = [all_meta[i] for i in indices[:n_train]]
     if train < 0.1:

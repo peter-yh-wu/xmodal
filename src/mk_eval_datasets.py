@@ -110,13 +110,17 @@ class MetaFolder(AbstractMeta):
 def split_meta(all_meta, train=0.8, validation=0.1, test=0.1, split_idxs_path=None):
     '''
     Split all_meta into 3 meta-datasets of tasks (disjoint characters)
+
+    NOTE: validation & test args deprecated
     '''
     if train >= 0.1:
         n_train = int(train * len(all_meta))
     else:
         n_train = int(0.1 * len(all_meta))
-    n_val = int(validation * len(all_meta))
-    n_test = int(test * len(all_meta))
+    n_val = int((len(all_meta) - n_train)/2)
+    n_test = len(all_meta) - n_train - n_val
+    # n_val = int(validation * len(all_meta))
+    # n_test = int(test * len(all_meta))
     indices = np.arange(len(all_meta))
     np.random.shuffle(indices)
     np.save(split_idxs_path, indices)
@@ -139,7 +143,7 @@ def main():
     parser.add_argument('--seed', type=int, help='random seed', default=0)
     parser.add_argument('--train-shots', default=5, type=int, help='Train shots')
     parser.add_argument('--test-shots', default=10, type=int, help='Train shots')
-    parser.add_argument('--train', default=0.8, type=float, help='Percentage of train')
+    parser.add_argument('--train', default=0.7, type=float, help='Percentage of train')
     parser.add_argument('--eval-tasks', default=8, type=int, help='Number of eval tasks')
     parser.add_argument('--verbose', action='store_true', help='', default=False)
     args = parser.parse_args()
@@ -160,7 +164,7 @@ def main():
         exit()
 
     all_meta = MetaFolder()
-    meta_train, meta_val, meta_test = split_meta(all_meta, args.train, 0.1, split_idxs_path=split_idxs_path)
+    meta_train, meta_val, meta_test = split_meta(all_meta, args.train, split_idxs_path=split_idxs_path)
 
     idx_dict = {'meta_train': [], 'meta_val': [], 'meta_test': []}
     for _ in range(args.eval_tasks):

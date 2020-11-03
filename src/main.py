@@ -161,7 +161,8 @@ parser.add_argument('--batch', default=4, type=int, help='minibatch size in base
 parser.add_argument('--meta-lr', default=1., type=float, help='meta learning rate')
 parser.add_argument('--lr-clf', default=1e-4, type=float, help='base learning rate')
 parser.add_argument('--lr-align', default=1e-4, type=float, help='base learning rate')
-parser.add_argument('--validation', default=0.1, type=float, help='Percentage of validation')
+parser.add_argument('--train', default=0.7, type=float, help='Percentage of train')
+# parser.add_argument('--validation', default=0.1, type=float, help='Percentage of validation')
 parser.add_argument('--validate-every', default=100, type=int, help='Meta-evaluation every ... base-tasks')
 parser.add_argument('--eval-tasks', default=-1, type=int, help='Number of eval tasks')
 parser.add_argument('-l', default='tri', type=str, help='loss fn')
@@ -371,9 +372,9 @@ collate_fn = collate_recipe
 all_meta = MetaFolderTwo(transform_x1=np_transform, transform_x2=np_transform)
 
 if args.do_super:
-    align_train, align_val, align_test, super_train = split_meta_both(all_meta, validation=args.validation, seed=args.iseed, mk_super=True, verbose=args.verbose, collate_fn=collate_recipe)
+    align_train, align_val, align_test, super_train = split_meta_both(all_meta, train=args.train, seed=args.iseed, mk_super=True, verbose=args.verbose, collate_fn=collate_recipe)
 else:
-    align_train, align_val, align_test = split_meta_both(all_meta, validation=args.validation, seed=args.iseed, dept=args.ae, verbose=args.verbose, collate_fn=collate_recipe)
+    align_train, align_val, align_test = split_meta_both(all_meta, train=args.train, seed=args.iseed, dept=args.ae, verbose=args.verbose, collate_fn=collate_recipe)
 
 cross_entropy = nn.CrossEntropyLoss()
 
@@ -534,9 +535,10 @@ for meta_iteration in range(args.start_meta_iteration, args.meta_iterations):
         meta_optimizer.step()
 
     if meta_iteration % args.validate_every == 0:
-        # evaluate audio clf
+        # evaluate clf 1
         metrics = []
-        for (meta_dataset, mode) in [(align_test, 'test')]: # [(align_train, 'train'), (align_val, 'val'), (align_test, 'test')]:
+        # for (meta_dataset, mode) in [(align_test, 'test')]: # [(align_train, 'train'), (align_val, 'val'), (align_test, 'test')]:
+        for (meta_dataset, mode) in [(align_train, 'train'), (align_test, 'test')]:
             mode = 'meta_'+mode
             curr_idx_dict = idx_dict[mode]
             meta_losses = []

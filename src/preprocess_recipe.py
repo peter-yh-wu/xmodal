@@ -4,6 +4,8 @@ import os
 import pickle
 import re
 import torch
+import shutil
+import random
 
 from transformers import BertTokenizer, BertModel
 from tqdm import tqdm
@@ -22,13 +24,14 @@ def load_pkl(path):
 
 
 def main():
-    min_data = 20
+    min_data = 100
 
     data_dir = '../data/recipe'
     fid_to_label_path = os.path.join(data_dir, 'fid_to_label.pkl')
     fid_to_text_path = os.path.join(data_dir, 'fid_to_text.pkl')
 
-    if not os.path.exists(fid_to_label_path) and not os.path.exists(fid_to_text_path):
+    if True:
+        # if not os.path.exists(fid_to_label_path) and not os.path.exists(fid_to_text_path):
         metadata_dir = os.path.join(data_dir, 'metadata')
         metadata_files = os.listdir(metadata_dir)
         metadata_files = [f for f in metadata_files if f.endswith('.json')]
@@ -63,31 +66,48 @@ def main():
                 label_counts.append(label_dict[label])
         print('%d Classes' % len(new_label_dict))
         print('%d Datapoints' % num_data)
-        print('mean labels per class:  %d' % np.mean(label_counts))
-        print('stdev labels per class: %d' % np.std(label_counts))
+        mean_labels = np.mean(label_counts)
+        std_labels = np.std(label_counts)
+        print('original mean labels per class:  %d' % mean_labels)
+        print('original stdev labels per class: %d' % std_labels)
 
         label_set = set(new_label_dict.keys())
+        curr_label_counts = {l:0 for l in sorted(list(label_set))}
+        max_labels = mean_labels+std_labels
+        print('capping at %d' % max_labels)
+
+        fids = sorted(list(fid_to_label.keys()))
+        random.Random(0).shuffle(fids)
 
         new_fid_to_label = {}
         new_fid_to_text = {}
-        for fid in fid_to_label:
+        for fid in fids:
             label = fid_to_label[fid]
-            if label in label_set:
+            if label in label_set and curr_label_counts[label] <= max_labels:
+                curr_label_counts[label] += 1
                 new_fid_to_label[fid] = label
                 new_fid_to_text[fid] = fid_to_text[fid]
+        new_label_counts = sorted(list(curr_label_counts.values()))
+        print('now %d Datapoints' % np.sum(new_label_counts))
+        print('new mean labels per class:  %d' % np.mean(new_label_counts))
+        print('new stdev labels per class: %d' % np.std(new_label_counts))
 
         save_pkl(new_fid_to_label, fid_to_label_path)
         save_pkl(new_fid_to_text, fid_to_text_path)
 
     label2int_path = os.path.join(data_dir, 'label2int.pkl')
-    if not os.path.exists(label2int_path):
+    if True:
+        # if not os.path.exists(label2int_path):
         fid_to_label = load_pkl(fid_to_label_path)
         labels = sorted(list(set(fid_to_label.values())))
         label2int = {label: i for i, label in enumerate(labels)}
         save_pkl(label2int, label2int_path)
 
     text_emb_dir = os.path.join(data_dir, 'text_embs')
-    if not os.path.exists(text_emb_dir):
+    if os.path.exists(text_emb_dir):
+        shutil.rmtree(text_emb_dir)
+    if True:
+        # if not os.path.exists(text_emb_dir):
         os.makedirs(text_emb_dir)
         tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
         model = BertModel.from_pretrained('bert-base-uncased')
@@ -109,7 +129,10 @@ def main():
                 np.save(emb_path, encoded_layers.cpu().numpy())
 
     new_img_dir = os.path.join(data_dir, 'new_imgs')
-    if not os.path.exists(new_img_dir):
+    if os.path.exists(new_img_dir):
+        shutil.rmtree(new_img_dir)
+    if True:
+        # if not os.path.exists(new_img_dir):
         os.makedirs(new_img_dir)
         fid_to_label = load_pkl(os.path.join(data_dir, 'fid_to_label.pkl'))
         fids = sorted(list(fid_to_label.keys()))
