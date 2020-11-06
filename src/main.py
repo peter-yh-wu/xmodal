@@ -12,6 +12,8 @@ import torch
 import torch.nn.functional as F
 
 from decimal import Decimal
+from PIL import Image
+from sklearn.metrics import accuracy_score, recall_score, precision_score, f1_score, roc_curve, auc, confusion_matrix
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 from torch import nn
@@ -151,6 +153,7 @@ parser.add_argument('--margin', default=0.1, type=float, help='margin in loss fn
 parser.add_argument('--tfr', default=0.5, type=float, help='teacher forcing ratio')
 parser.add_argument('--epochs', default=100, type=int, help='number of epochs')
 parser.add_argument('--batch-size', default=256, type=int, help='number of epochs')
+parser.add_argument('--mode', default="18", type=str, help='mode')
 
 # few shot args
 parser.add_argument('--classes', default=5, type=int, help='classes in base-task (N-way)')
@@ -354,28 +357,34 @@ def eval_clf_1(net, loss_fn, test_iter, iterations):
 def train_no_meta(net, loss_fn, loader, optimizer, args):
     net.train()
     train_losses = []
-    train_correct = 0
-    train_total_samples = 0
+    preds = []
+    trues = []
     for batch_idx, (train_x, train_y) in enumerate(loader):
         train_x = train_x.cuda(args.cuda)
         train_y = train_y.cuda(args.cuda)
         train_out = net(train_x)
         loss = loss_fn(train_out, train_y)
+        train_losses.append(loss.item())
         net.zero_grad()
         loss.backward()
         optimizer.step()
-        train_pred = train_out.data.max(1, keepdim=True)[1]
-        train_matchings = train_pred.eq(train_y.data.view_as(train_pred).type(torch.cuda.LongTensor))
-        train_correct = train_correct + train_matchings.sum()
-        train_total_samples = train_total_samples + train_x.size()[0]
-    train_acc = float(train_correct)/train_total_samples
-    return np.mean(train_losses), train_acc
+        train_pred = train_out.data.max(1, keepdim=True)[1].cpu().numpy()[:,0]
+        preds.append(train_pred)
+        trues.append(train_y.cpu().numpy())
+    preds = np.concatenate(preds)
+    trues = np.concatenate(trues)
+    metrics_dict = {}
+    metrics_dict["accuracy"] = accuracy_score(trues, preds)
+    # metrics_dict["precision"] = precision_score(trues, preds, average="macro")
+    # metrics_dict["recall"] = recall_score(trues, preds, average="macro")
+    # metrics_dict["f1_score"] = f1_score(trues, preds, average="macro")
+    return np.mean(train_losses), metrics_dict
 
 
 def eval_no_meta(net, loss_fn, loader, args):
     losses = []
-    correct = 0
-    total_samples = 0
+    preds = []
+    trues = []
     net.eval()
     with torch.no_grad():
         for x, y in loader:
@@ -384,12 +393,18 @@ def eval_no_meta(net, loss_fn, loader, args):
             out = net(x)
             loss = loss_fn(out, y)
             losses.append(loss.item())
-            pred = out.data.max(1, keepdim=True)[1]
-            matchings = pred.eq(y.data.view_as(pred).type(torch.cuda.LongTensor))
-            correct = correct + matchings.sum()
-            total_samples = total_samples + x.size()[0]        
-    val_acc = float(correct)/total_samples
-    return np.mean(losses), val_acc
+            pred = out.data.max(1, keepdim=True)[1].cpu().numpy()[:,0]
+            preds.append(pred)
+            trues.append(y.cpu().numpy())
+    preds = np.concatenate(preds)
+    trues = np.concatenate(trues)
+    metrics_dict = {}
+    metrics_dict["accuracy"] = accuracy_score(trues, preds)
+    metrics_dict["precision"] = precision_score(trues, preds, average="macro")
+    metrics_dict["recall"] = recall_score(trues, preds, average="macro")
+    metrics_dict["f1_score"] = f1_score(trues, preds, average="macro")
+    metrics_dict["confusion_matrix"] = confusion_matrix(trues, preds, normalize="true")
+    return np.mean(losses), metrics_dict
 
 
 random.seed(args.seed)
@@ -415,7 +430,7 @@ if args.merge0:
 if args.reptile1:
     expt_str += '-reptile1'
 if args.no_meta_1:
-    expt_str += '-no_meta_1'
+    expt_str += '-no_meta_1_%s' % args.mode
 if args.eval_tasks == -1:
     log_path = os.path.join(log_dir, 'log_k-%d_mlr-%s_lrc-%s_lra-%s_tab-%d_s-%d-%d%s.txt' % (args.train_shots, mlr_str, lrc_str, lra_str, args.train_align_batch, args.seed, args.iseed, expt_str))
     ckpt_path = os.path.join(log_dir, 'meta_k-%d_mlr-%s_lrc-%s_lra-%s_tab-%d_s-%d-%d%s.ckpt' % (args.train_shots, mlr_str, lrc_str, lra_str, args.train_align_batch, args.seed, args.iseed, expt_str))
@@ -448,7 +463,7 @@ elif args.merge:
     # TODO
     meta_net = MergedMetaModel(fc_dim, args.classes, vocab_size, emb_mat, args.cuda)
 elif args.no_meta_1:
-    meta_net = ImageClf(fc_dim, num_classes)
+    meta_net = ImageClf(fc_dim, num_classes, mode=args.mode)
 else:
     enc1 = ImageEncoder(fc_dim)
     enc2 = TextEncoder(fc_dim)
@@ -487,9 +502,10 @@ stop_iters = 25*args.validate_every
 # evaluate clf 1 (image for recipe, audio for wld)
 if not args.no_pre:
     if args.no_meta_1:
-        loss, acc = eval_no_meta(meta_net, cross_entropy, test_loader, args)
-        prefix_str = 'pretrain clf 1\t'
-        metrics_str = '%.4f %.4f' % (loss, acc)
+        loss, metrics = eval_no_meta(meta_net, cross_entropy, test_loader, args)
+        prefix_str = '-1 clf 1\t'
+        print('                trainl traina loss   acc    prec   rec    f1')
+        metrics_str = '------ ------ %.4f %.4f %.4f %.4f %.4f' % (loss, metrics["accuracy"], metrics["precision"], metrics["recall"], metrics["f1_score"])
         print_log(prefix_str+metrics_str, log_path)
     else:
         metrics = []
@@ -531,11 +547,19 @@ if args.do_super:
     super_train = make_infinite(super_train)
 
 if args.no_meta_1:
+    best_epoch = -1
     for epoch in range(args.epochs):
-        train_loss, train_acc = train_no_meta(meta_net, cross_entropy, train_loader, no_meta_optimizer, args)
-        loss, acc = eval_no_meta(meta_net, cross_entropy, test_loader, args)
-        prefix_str = '%d clf 1\t' % epoch
-        metrics_str = '%.4f %.4f %.4f %.4f' % (train_loss, train_acc, loss, acc)
+        train_loss, train_metrics = train_no_meta(meta_net, cross_entropy, train_loader, no_meta_optimizer, args)
+        loss, metrics = eval_no_meta(meta_net, cross_entropy, test_loader, args)
+        train_acc = train_metrics["accuracy"]
+        metric = metrics["f1_score"]
+        if metric > best_metric:
+            conf_mat = metrics["confusion_matrix"]/np.max(metrics["confusion_matrix"])*255
+            conf_mat = conf_mat.astype('uint8')
+            im = Image.fromarray(conf_mat)
+            im.save('conf_mat.png')
+        prefix_str = '%02d clf 1\t' % epoch
+        metrics_str = '%.4f %.4f %.4f %.4f %.4f %.4f %.4f' % (train_loss, train_acc, loss, metrics["accuracy"], metrics["precision"], metrics["recall"], metrics["f1_score"])
         print_log(prefix_str+metrics_str, log_path)
 else:
     suffix_str = ' <'
