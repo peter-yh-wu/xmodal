@@ -13,11 +13,23 @@ class ImageEncoder(nn.Module):
     '''Outputs embedding given image input'''
     def __init__(self, output_dim):
         nn.Module.__init__(self)
-        self.model = torchvision.models.resnet18(pretrained=True)
-        self.model.fc = nn.Linear(512, output_dim)
+        self.model = torchvision.models.resnet152(pretrained=True) # .resnet18(pretrained=True)
+        self.model.fc = nn.Linear(2048, output_dim) # nn.Linear(512, output_dim)
     
     def forward(self, x):
         x = self.model(x)
+        return x
+
+
+class ImageClf(nn.Module):
+    def __init__(self, emb_dim, output_dim):
+        nn.Module.__init__(self)
+        self.encoder = ImageEncoder(emb_dim)
+        self.clf = nn.Sequential(nn.ReLU(), nn.Linear(emb_dim, output_dim))
+    
+    def forward(self, x):
+        x = self.encoder(x)
+        x = self.clf(x)
         return x
 
 

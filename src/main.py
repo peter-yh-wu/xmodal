@@ -18,8 +18,8 @@ from torch import nn
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
 
-from data_utils import MetaFolderTwo, split_meta_both, r_at_k, np_transform, collate_recipe
-from models import AEMetaModel, MergedMetaModel, MetaModel, TextEncoder, ImageEncoder
+from data_utils import MetaFolderTwo, split_meta_both, r_at_k, np_transform, collate_recipe, mk_dataloader
+from models import AEMetaModel, MergedMetaModel, MetaModel, TextEncoder, ImageEncoder, ImageClf
 
 
 def cmap_map(function, cmap):
@@ -28,7 +28,7 @@ def cmap_map(function, cmap):
     """
     cdict = cmap._segmentdata
     step_dict = {}
-    # Firt get the list of points where the segments start or end
+    # First get the list of points where the segments start or end
     for key in ('red', 'green', 'blue'):
         step_dict[key] = list(map(lambda x: x[0], cdict[key]))
     step_list = sum(step_dict.values(), [])
@@ -137,6 +137,7 @@ parser.add_argument('--load', action='store_true', help='load from ckpt', defaul
 parser.add_argument('--no-save', action='store_true', help='dont save model', default=False)
 parser.add_argument('--reptile1', action='store_true', help='unimodal meta learning', default=False)
 parser.add_argument('--train1', action='store_true', help='train test modality', default=False)
+parser.add_argument('--no-meta-1', action='store_true', help='clf1 with no meta learning', default=False)
 parser.add_argument('--ae', action='store_true', help='autoencoder', default=False)
 parser.add_argument('--no-pre', action='store_true', help='dont record untrained model performance', default=False)
 parser.add_argument('--print-train', action='store_true', help='print train metrics', default=False)
@@ -148,6 +149,8 @@ parser.add_argument('--cuda', default=0, type=int, help='cuda device')
 parser.add_argument('--num-workers', default=4, type=int, help='cuda device')
 parser.add_argument('--margin', default=0.1, type=float, help='margin in loss fn')
 parser.add_argument('--tfr', default=0.5, type=float, help='teacher forcing ratio')
+parser.add_argument('--epochs', default=100, type=int, help='number of epochs')
+parser.add_argument('--batch-size', default=256, type=int, help='number of epochs')
 
 # few shot args
 parser.add_argument('--classes', default=5, type=int, help='classes in base-task (N-way)')
@@ -232,23 +235,26 @@ def train_ae(net, loss_fn, optimizer, train_iter, iterations, teacher_forcing_ra
 
 def train_clf_1(net, loss_fn, optimizer, train_iter, iterations, print_train=False):
     losses = []
-    accuracies = []
+    correct = 0
+    total_samples = 0
     net.train()
     for iteration in range(iterations):
         x1, _, _, base_y = Variable_(next(train_iter))
-        prediction = net.forward1(x1)
-        loss = loss_fn(prediction, base_y)
+        out = net.forward1(x1)
+        loss = loss_fn(out, base_y)
         if print_train:
-            _, argmax = prediction.max(1)
-            accuracy = (argmax == base_y).float().mean()
-            accuracies.append(accuracy.item())
-            print(iteration, ' ', loss, ' ', accuracy)
+            pred = out.data.max(1, keepdim=True)[1]
+            matchings = pred.eq(base_y.data.view_as(pred).type(torch.cuda.LongTensor))
+            correct = correct + matchings.sum()
+            total_samples = total_samples + x.size()[0]
+            print(iteration, ' ', loss, ' ', correct/total_samples)
         losses.append(loss.item())
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+    val_acc = float(correct)/total_samples
     if print_train:
-        return np.mean(losses), np.mean(accuracies)
+        return np.mean(losses), val_acc
     else:
         return np.mean(losses)
 
@@ -309,34 +315,82 @@ def eval_align_r(net, loss_fn, test_iter, iterations, margin=0.1):
 
 def eval_clf_2(net, loss_fn, test_iter, iterations):
     losses = []
-    accuracies = []
+    correct = 0
+    total_samples = 0
     net.eval()
     with torch.no_grad():
         for iteration in range(iterations):
             _, _, x2, base_y = Variable_(next(test_iter))
-            prediction = net.forward2(x2)
-            loss = loss_fn(prediction, base_y)
-            _, argmax = prediction.max(1)
-            accuracy = (argmax == base_y).float().mean()
+            out = net.forward2(x2)
+            loss = loss_fn(out, base_y)
             losses.append(loss.item())
-            accuracies.append(accuracy.item())
-    return np.mean(losses), np.mean(accuracies)
+            pred = out.data.max(1, keepdim=True)[1]
+            matchings = pred.eq(base_y.data.view_as(pred).type(torch.cuda.LongTensor))
+            correct = correct + matchings.sum()
+            total_samples = total_samples + x.size()[0]   
+    val_acc = float(correct)/total_samples
+    return np.mean(losses), val_acc
 
 
 def eval_clf_1(net, loss_fn, test_iter, iterations):
     losses = []
-    accuracies = []
+    correct = 0
+    total_samples = 0
     net.eval()
     with torch.no_grad():
         for iteration in range(iterations):
             x1, _, _, base_y = Variable_(next(test_iter))
-            prediction = net.forward1(x1)
-            loss = loss_fn(prediction, base_y)
-            _, argmax = prediction.max(1)
-            accuracy = (argmax == base_y).float().mean()
+            out = net.forward1(x1)
+            loss = loss_fn(out, base_y)
             losses.append(loss.item())
-            accuracies.append(accuracy.item())
-    return np.mean(losses), np.mean(accuracies)
+            pred = out.data.max(1, keepdim=True)[1]
+            matchings = pred.eq(base_y.data.view_as(pred).type(torch.cuda.LongTensor))
+            correct = correct + matchings.sum()
+            total_samples = total_samples + x.size()[0]
+    val_acc = float(correct)/total_samples
+    return np.mean(losses), val_acc
+
+
+def train_no_meta(net, loss_fn, loader, optimizer, args):
+    net.train()
+    train_losses = []
+    train_correct = 0
+    train_total_samples = 0
+    for batch_idx, (train_x, train_y) in enumerate(loader):
+        train_x = train_x.cuda(args.cuda)
+        train_y = train_y.cuda(args.cuda)
+        train_out = net(train_x)
+        loss = loss_fn(train_out, train_y)
+        net.zero_grad()
+        loss.backward()
+        optimizer.step()
+        train_pred = train_out.data.max(1, keepdim=True)[1]
+        train_matchings = train_pred.eq(train_y.data.view_as(train_pred).type(torch.cuda.LongTensor))
+        train_correct = train_correct + train_matchings.sum()
+        train_total_samples = train_total_samples + train_x.size()[0]
+    train_acc = float(train_correct)/train_total_samples
+    return np.mean(train_losses), train_acc
+
+
+def eval_no_meta(net, loss_fn, loader, args):
+    losses = []
+    correct = 0
+    total_samples = 0
+    net.eval()
+    with torch.no_grad():
+        for x, y in loader:
+            x = x.cuda(args.cuda)
+            y = y.cuda(args.cuda)
+            out = net(x)
+            loss = loss_fn(out, y)
+            losses.append(loss.item())
+            pred = out.data.max(1, keepdim=True)[1]
+            matchings = pred.eq(y.data.view_as(pred).type(torch.cuda.LongTensor))
+            correct = correct + matchings.sum()
+            total_samples = total_samples + x.size()[0]        
+    val_acc = float(correct)/total_samples
+    return np.mean(losses), val_acc
+
 
 random.seed(args.seed)
 torch.manual_seed(args.seed)
@@ -358,6 +412,10 @@ if args.merge:
     expt_str += '-merge'
 if args.merge0:
     expt_str += '-merge0'
+if args.reptile1:
+    expt_str += '-reptile1'
+if args.no_meta_1:
+    expt_str += '-no_meta_1'
 if args.eval_tasks == -1:
     log_path = os.path.join(log_dir, 'log_k-%d_mlr-%s_lrc-%s_lra-%s_tab-%d_s-%d-%d%s.txt' % (args.train_shots, mlr_str, lrc_str, lra_str, args.train_align_batch, args.seed, args.iseed, expt_str))
     ckpt_path = os.path.join(log_dir, 'meta_k-%d_mlr-%s_lrc-%s_lra-%s_tab-%d_s-%d-%d%s.ckpt' % (args.train_shots, mlr_str, lrc_str, lra_str, args.train_align_batch, args.seed, args.iseed, expt_str))
@@ -366,15 +424,19 @@ else:
     ckpt_path = os.path.join(log_dir, 'meta_k-%d_mlr-%s_lrc-%s_lra-%s_tab-%d_e-%d_s-%d-%d%s.ckpt' % (args.train_shots, mlr_str, lrc_str, lra_str, args.train_align_batch, args.eval_tasks, args.seed, args.iseed, expt_str))
 print_log(log_path, log_path)
 
-idx_dir = '../data/recipe/idxs'
-
-collate_fn = collate_recipe
-all_meta = MetaFolderTwo(transform_x1=np_transform, transform_x2=np_transform)
-
-if args.do_super:
-    align_train, align_val, align_test, super_train = split_meta_both(all_meta, train=args.train, seed=args.iseed, mk_super=True, verbose=args.verbose, collate_fn=collate_recipe)
+if args.no_meta_1:
+    num_classes, train_loader = mk_dataloader('train', batch_size=args.batch_size, num_workers=1)
+    _, test_loader = mk_dataloader('test', batch_size=args.batch_size, num_workers=1, shuffle=False)
 else:
-    align_train, align_val, align_test = split_meta_both(all_meta, train=args.train, seed=args.iseed, dept=args.ae, verbose=args.verbose, collate_fn=collate_recipe)
+    idx_dir = '../data/recipe/idxs'
+
+    collate_fn = collate_recipe
+    all_meta = MetaFolderTwo(transform_x1=np_transform, transform_x2=np_transform)
+
+    if args.do_super:
+        align_train, align_val, align_test, super_train = split_meta_both(all_meta, train=args.train, seed=args.iseed, mk_super=True, verbose=args.verbose, collate_fn=collate_recipe)
+    else:
+        align_train, align_val, align_test = split_meta_both(all_meta, train=args.train, seed=args.iseed, dept=args.ae, verbose=args.verbose, collate_fn=collate_recipe)
 
 cross_entropy = nn.CrossEntropyLoss()
 
@@ -385,6 +447,8 @@ if args.ae:
 elif args.merge:
     # TODO
     meta_net = MergedMetaModel(fc_dim, args.classes, vocab_size, emb_mat, args.cuda)
+elif args.no_meta_1:
+    meta_net = ImageClf(fc_dim, num_classes)
 else:
     enc1 = ImageEncoder(fc_dim)
     enc2 = TextEncoder(fc_dim)
@@ -397,16 +461,19 @@ text_clf_state = None
 align_state = None
 if args.do_super:
     super_optimizer = torch.optim.Adam(meta_net.parameters(), lr=args.lr_align)
+elif args.no_meta_1:
+    no_meta_optimizer = torch.optim.Adam(meta_net.parameters(), lr=args.lr_clf)
 
 if args.load and os.path.exists(ckpt_path):
     loaded_states = torch.load(ckpt_path)
     meta_net.load_state_dict(loaded_states['model'])
     meta_optimizer.load_state_dict(loaded_states['optim'])
 
-idx_dict_path = os.path.join(idx_dir, 'idx_dict_%d_%d_%d.npy' % (args.train_shots, args.eval_tasks, args.iseed))
-print(idx_dict_path)
-idx_dict = np.load(idx_dict_path, allow_pickle=True)
-idx_dict = idx_dict[()]
+if not args.no_meta_1:
+    idx_dict_path = os.path.join(idx_dir, 'idx_dict_%d_%d_%d.npy' % (args.train_shots, args.eval_tasks, args.iseed))
+    print(idx_dict_path)
+    idx_dict = np.load(idx_dict_path, allow_pickle=True)
+    idx_dict = idx_dict[()]
 
 best_metric = 0.0
 best_iter = 0
@@ -419,126 +486,14 @@ stop_iters = 25*args.validate_every
 
 # evaluate clf 1 (image for recipe, audio for wld)
 if not args.no_pre:
-    metrics = []
-    for (meta_dataset, mode) in [(align_train, 'train'), (align_val, 'val'), (align_test, 'test')]:
-        mode = 'meta_'+mode
-        curr_idx_dict = idx_dict[mode]
-        meta_losses = []
-        meta_accuracies = []
-        for task_idx_dict in curr_idx_dict:
-            character_indices = task_idx_dict['character_indices']
-            all_curr_idxs = task_idx_dict['all_curr_idxs']
-            new_train_idxs = task_idx_dict['new_train_idxs']
-            new_test_idxs = task_idx_dict['new_test_idxs']
-            train, val = meta_dataset.get_task_split(character_indices, all_curr_idxs, new_train_idxs, new_test_idxs, train_K=args.train_shots)
-            train_iter = make_infinite(DataLoader(train, args.batch, collate_fn=collate_fn, num_workers=args.num_workers))
-            val_iter = make_infinite(DataLoader(val, args.batch, collate_fn=collate_fn, num_workers=args.num_workers))
-            net = meta_net.clone()
-            optimizer = get_optimizer(net, args.lr_clf)
-            if args.print_train:
-                meta_train_loss, meta_train_acc = train_clf_1(net, cross_entropy, optimizer, train_iter, args.test_iterations, args.print_train)
-                print(meta_train_loss, meta_train_acc)
-            else:
-                meta_train_loss = train_clf_1(net, cross_entropy, optimizer, train_iter, args.test_iterations, args.print_train)
-            num_iter = int(math.ceil(len(val)/args.batch))
-            meta_loss, meta_accuracy = eval_clf_1(net, cross_entropy, val_iter, num_iter)
-            meta_losses.append(meta_loss)
-            meta_accuracies.append(meta_accuracy)
-        metrics.append(meta_train_loss)
-        metrics.append(np.mean(meta_losses))
-        metrics.append(np.mean(meta_accuracies))
-    prefix_str = 'pretrain clf 1\t'
-    metrics_str = ' '.join(['%.4f' % f for f in metrics])
-    print_log(prefix_str+metrics_str, log_path)
-
-# -------------------
-# Main loop
-
-if args.do_super:
-    super_train = make_infinite(super_train)
-
-suffix_str = ' <'
-for meta_iteration in range(args.start_meta_iteration, args.meta_iterations):
-    # Update learning rate
-    if not args.do_super:
-        meta_lr = args.meta_lr * (1. - meta_iteration/float(args.meta_iterations))
-        set_learning_rate(meta_optimizer, meta_lr)
-
-    if args.reptile1 or args.train1:
-        net = meta_net.clone()
-        optimizer = get_optimizer(net, args.lr_clf, audio_clf_state)
-        train = align_train.get_random_task(args.classes, args.train_shots, is_align=False)
-        train_iter = make_infinite(DataLoader(train, args.batch, shuffle=True, collate_fn=collate_fn, num_workers=args.num_workers))
-        if args.print_train:
-            loss, acc = train_clf_1(net, cross_entropy, optimizer, train_iter, args.iterations, print_train=args.print_train)
-        else:
-            loss = train_clf_1(net, cross_entropy, optimizer, train_iter, args.iterations, print_train=args.print_train)
-        audio_clf_state = optimizer.state_dict()
-        meta_net.point_grad_to(net)
-        meta_optimizer.step()
-        if args.print_train:
-            print(loss, acc)
-
-    if args.merge:
-        net = meta_net.clone()
-        optimizer = get_optimizer(net, args.lr_clf, audio_clf_state)
-        train = align_train.get_random_task(args.classes, args.train_shots, is_align=False)
-        train_iter = make_infinite(DataLoader(train, args.batch, shuffle=True, collate_fn=collate_fn, num_workers=args.num_workers))
-        loss = train_merge_clf(net, cross_entropy, optimizer, train_iter, args.iterations)
-        audio_clf_state = optimizer.state_dict()
-        meta_net.point_grad_to(net)
-        meta_optimizer.step()
-
-    if args.ae:
-        net = meta_net.clone()
-        optimizer = get_optimizer(net, args.lr_clf, text_clf_state)
-        train = align_train.get_random_task(args.classes, args.train_shots)
-        train_iter = make_infinite(DataLoader(train, args.train_align_batch, shuffle=True, collate_fn=collate_fn, num_workers=args.num_workers))
-        loss = train_ae(net, ae_loss, optimizer, train_iter, args.iterations, teacher_forcing_ratio=args.tfr)
-        text_clf_state = optimizer.state_dict()
-        meta_net.point_grad_to(net)
-        meta_optimizer.step()
-
-    # train text clf
-    if not args.reptile1 and not args.ae and not args.merge:
-        net = meta_net.clone()
-        optimizer = get_optimizer(net, args.lr_clf, text_clf_state)
-        train = align_train.get_random_task(args.classes, args.train_shots, is_align=False)
-        train_iter = make_infinite(DataLoader(train, args.batch, shuffle=True, collate_fn=collate_fn, num_workers=args.num_workers))
-        loss = train_clf_2(net, cross_entropy, optimizer, train_iter, args.iterations)
-        text_clf_state = optimizer.state_dict()
-        meta_net.point_grad_to(net)
-        meta_optimizer.step()
-        if args.verbose:
-            print(loss)
-
-    # train alignment
-    if args.do_super:
-        losses = []
-        meta_net.train()
-        for iteration in range(args.iterations):
-            x1, y1, x2, y2 = Variable_(next(super_train))
-            o1, o2 = meta_net.forward_align(x1, x2)
-            loss = align_loss(o1, o2, y1, margin=args.margin)
-            losses.append(loss.cpu().item())
-            super_optimizer.zero_grad()
-            loss.backward()
-            super_optimizer.step()
-    elif not args.reptile1 and not args.ae and not args.merge and not args.merge0:
-        net = meta_net.clone()
-        optimizer = get_optimizer(net, args.lr_align, align_state)
-        train = align_train.get_random_task(args.classes, args.train_shots, is_align=True)
-        train_iter = make_infinite(DataLoader(train, args.train_align_batch, shuffle=True, collate_fn=collate_fn, num_workers=args.num_workers))
-        loss = train_align(net, align_loss, optimizer, train_iter, args.iterations, margin=args.margin)
-        align_state = optimizer.state_dict()
-        meta_net.point_grad_to(net)
-        meta_optimizer.step()
-
-    if meta_iteration % args.validate_every == 0:
-        # evaluate clf 1
+    if args.no_meta_1:
+        loss, acc = eval_no_meta(meta_net, cross_entropy, test_loader, args)
+        prefix_str = 'pretrain clf 1\t'
+        metrics_str = '%.4f %.4f' % (loss, acc)
+        print_log(prefix_str+metrics_str, log_path)
+    else:
         metrics = []
-        # for (meta_dataset, mode) in [(align_test, 'test')]: # [(align_train, 'train'), (align_val, 'val'), (align_test, 'test')]:
-        for (meta_dataset, mode) in [(align_train, 'train'), (align_test, 'test')]:
+        for (meta_dataset, mode) in [(align_train, 'train'), (align_val, 'val'), (align_test, 'test')]:
             mode = 'meta_'+mode
             curr_idx_dict = idx_dict[mode]
             meta_losses = []
@@ -549,11 +504,15 @@ for meta_iteration in range(args.start_meta_iteration, args.meta_iterations):
                 new_train_idxs = task_idx_dict['new_train_idxs']
                 new_test_idxs = task_idx_dict['new_test_idxs']
                 train, val = meta_dataset.get_task_split(character_indices, all_curr_idxs, new_train_idxs, new_test_idxs, train_K=args.train_shots)
-                train_iter = make_infinite(DataLoader(train, args.batch, shuffle=False, collate_fn=collate_fn, num_workers=args.num_workers))
-                val_iter = make_infinite(DataLoader(val, args.batch, shuffle=False, collate_fn=collate_fn, num_workers=args.num_workers))
+                train_iter = make_infinite(DataLoader(train, args.batch, collate_fn=collate_fn, num_workers=args.num_workers))
+                val_iter = make_infinite(DataLoader(val, args.batch, collate_fn=collate_fn, num_workers=args.num_workers))
                 net = meta_net.clone()
                 optimizer = get_optimizer(net, args.lr_clf)
-                meta_train_loss = train_clf_1(net, cross_entropy, optimizer, train_iter, args.test_iterations)
+                if args.print_train:
+                    meta_train_loss, meta_train_acc = train_clf_1(net, cross_entropy, optimizer, train_iter, args.test_iterations, args.print_train)
+                    print(meta_train_loss, meta_train_acc)
+                else:
+                    meta_train_loss = train_clf_1(net, cross_entropy, optimizer, train_iter, args.test_iterations, args.print_train)
                 num_iter = int(math.ceil(len(val)/args.batch))
                 meta_loss, meta_accuracy = eval_clf_1(net, cross_entropy, val_iter, num_iter)
                 meta_losses.append(meta_loss)
@@ -561,20 +520,142 @@ for meta_iteration in range(args.start_meta_iteration, args.meta_iterations):
             metrics.append(meta_train_loss)
             metrics.append(np.mean(meta_losses))
             metrics.append(np.mean(meta_accuracies))
-        prefix_str = '%d clf 1\t' % meta_iteration
+        prefix_str = 'pretrain clf 1\t'
         metrics_str = ' '.join(['%.4f' % f for f in metrics])
-        if metrics[-1] > best_metric:
-            print_log(prefix_str+metrics_str+suffix_str, log_path)
-            suffix_str = suffix_str+'<'
-            best_metric = metrics[-1]
-            best_iter = meta_iteration
-            if not args.no_save:
-                if args.do_super:
-                    torch.save({'model': meta_net.state_dict(), 'optim': super_optimizer.state_dict()}, ckpt_path)
-                else:
-                    torch.save({'model': meta_net.state_dict(), 'optim': meta_optimizer.state_dict()}, ckpt_path)
-        elif meta_iteration - best_iter > stop_iters:
-            print_log(prefix_str+metrics_str, log_path)
-            exit()
-        else:
-            print_log(prefix_str+metrics_str, log_path)
+        print_log(prefix_str+metrics_str, log_path)
+
+# -------------------
+# Main loop
+
+if args.do_super:
+    super_train = make_infinite(super_train)
+
+if args.no_meta_1:
+    for epoch in range(args.epochs):
+        train_loss, train_acc = train_no_meta(meta_net, cross_entropy, train_loader, no_meta_optimizer, args)
+        loss, acc = eval_no_meta(meta_net, cross_entropy, test_loader, args)
+        prefix_str = '%d clf 1\t' % epoch
+        metrics_str = '%.4f %.4f %.4f %.4f' % (train_loss, train_acc, loss, acc)
+        print_log(prefix_str+metrics_str, log_path)
+else:
+    suffix_str = ' <'
+    for meta_iteration in range(args.start_meta_iteration, args.meta_iterations):
+        # Update learning rate
+        if not args.do_super:
+            meta_lr = args.meta_lr * (1. - meta_iteration/float(args.meta_iterations))
+            set_learning_rate(meta_optimizer, meta_lr)
+
+        if args.reptile1 or args.train1:
+            net = meta_net.clone()
+            optimizer = get_optimizer(net, args.lr_clf, audio_clf_state)
+            train = align_train.get_random_task(args.classes, args.train_shots, is_align=False)
+            train_iter = make_infinite(DataLoader(train, args.batch, shuffle=True, collate_fn=collate_fn, num_workers=args.num_workers))
+            if args.print_train:
+                loss, acc = train_clf_1(net, cross_entropy, optimizer, train_iter, args.iterations, print_train=args.print_train)
+            else:
+                loss = train_clf_1(net, cross_entropy, optimizer, train_iter, args.iterations, print_train=args.print_train)
+            audio_clf_state = optimizer.state_dict()
+            meta_net.point_grad_to(net)
+            meta_optimizer.step()
+            if args.print_train:
+                print(loss, acc)
+
+        if args.merge:
+            net = meta_net.clone()
+            optimizer = get_optimizer(net, args.lr_clf, audio_clf_state)
+            train = align_train.get_random_task(args.classes, args.train_shots, is_align=False)
+            train_iter = make_infinite(DataLoader(train, args.batch, shuffle=True, collate_fn=collate_fn, num_workers=args.num_workers))
+            loss = train_merge_clf(net, cross_entropy, optimizer, train_iter, args.iterations)
+            audio_clf_state = optimizer.state_dict()
+            meta_net.point_grad_to(net)
+            meta_optimizer.step()
+
+        if args.ae:
+            net = meta_net.clone()
+            optimizer = get_optimizer(net, args.lr_clf, text_clf_state)
+            train = align_train.get_random_task(args.classes, args.train_shots)
+            train_iter = make_infinite(DataLoader(train, args.train_align_batch, shuffle=True, collate_fn=collate_fn, num_workers=args.num_workers))
+            loss = train_ae(net, ae_loss, optimizer, train_iter, args.iterations, teacher_forcing_ratio=args.tfr)
+            text_clf_state = optimizer.state_dict()
+            meta_net.point_grad_to(net)
+            meta_optimizer.step()
+
+        # train text clf
+        if not args.reptile1 and not args.ae and not args.merge:
+            net = meta_net.clone()
+            optimizer = get_optimizer(net, args.lr_clf, text_clf_state)
+            train = align_train.get_random_task(args.classes, args.train_shots, is_align=False)
+            train_iter = make_infinite(DataLoader(train, args.batch, shuffle=True, collate_fn=collate_fn, num_workers=args.num_workers))
+            loss = train_clf_2(net, cross_entropy, optimizer, train_iter, args.iterations)
+            text_clf_state = optimizer.state_dict()
+            meta_net.point_grad_to(net)
+            meta_optimizer.step()
+            if args.verbose:
+                print(loss)
+
+        # train alignment
+        if args.do_super:
+            losses = []
+            meta_net.train()
+            for iteration in range(args.iterations):
+                x1, y1, x2, y2 = Variable_(next(super_train))
+                o1, o2 = meta_net.forward_align(x1, x2)
+                loss = align_loss(o1, o2, y1, margin=args.margin)
+                losses.append(loss.cpu().item())
+                super_optimizer.zero_grad()
+                loss.backward()
+                super_optimizer.step()
+        elif not args.reptile1 and not args.ae and not args.merge and not args.merge0:
+            net = meta_net.clone()
+            optimizer = get_optimizer(net, args.lr_align, align_state)
+            train = align_train.get_random_task(args.classes, args.train_shots, is_align=True)
+            train_iter = make_infinite(DataLoader(train, args.train_align_batch, shuffle=True, collate_fn=collate_fn, num_workers=args.num_workers))
+            loss = train_align(net, align_loss, optimizer, train_iter, args.iterations, margin=args.margin)
+            align_state = optimizer.state_dict()
+            meta_net.point_grad_to(net)
+            meta_optimizer.step()
+
+        if meta_iteration % args.validate_every == 0:
+            # evaluate clf 1
+            metrics = []
+            # for (meta_dataset, mode) in [(align_test, 'test')]: # [(align_train, 'train'), (align_val, 'val'), (align_test, 'test')]:
+            for (meta_dataset, mode) in [(align_train, 'train'), (align_test, 'test')]:
+                mode = 'meta_'+mode
+                curr_idx_dict = idx_dict[mode]
+                meta_losses = []
+                meta_accuracies = []
+                for task_idx_dict in curr_idx_dict:
+                    character_indices = task_idx_dict['character_indices']
+                    all_curr_idxs = task_idx_dict['all_curr_idxs']
+                    new_train_idxs = task_idx_dict['new_train_idxs']
+                    new_test_idxs = task_idx_dict['new_test_idxs']
+                    train, val = meta_dataset.get_task_split(character_indices, all_curr_idxs, new_train_idxs, new_test_idxs, train_K=args.train_shots)
+                    train_iter = make_infinite(DataLoader(train, args.batch, shuffle=False, collate_fn=collate_fn, num_workers=args.num_workers))
+                    val_iter = make_infinite(DataLoader(val, args.batch, shuffle=False, collate_fn=collate_fn, num_workers=args.num_workers))
+                    net = meta_net.clone()
+                    optimizer = get_optimizer(net, args.lr_clf)
+                    meta_train_loss = train_clf_1(net, cross_entropy, optimizer, train_iter, args.test_iterations)
+                    num_iter = int(math.ceil(len(val)/args.batch))
+                    meta_loss, meta_accuracy = eval_clf_1(net, cross_entropy, val_iter, num_iter)
+                    meta_losses.append(meta_loss)
+                    meta_accuracies.append(meta_accuracy)
+                metrics.append(meta_train_loss)
+                metrics.append(np.mean(meta_losses))
+                metrics.append(np.mean(meta_accuracies))
+            prefix_str = '%d clf 1\t' % meta_iteration
+            metrics_str = ' '.join(['%.4f' % f for f in metrics])
+            if metrics[-1] > best_metric:
+                print_log(prefix_str+metrics_str+suffix_str, log_path)
+                suffix_str = suffix_str+'<'
+                best_metric = metrics[-1]
+                best_iter = meta_iteration
+                if not args.no_save:
+                    if args.do_super:
+                        torch.save({'model': meta_net.state_dict(), 'optim': super_optimizer.state_dict()}, ckpt_path)
+                    else:
+                        torch.save({'model': meta_net.state_dict(), 'optim': meta_optimizer.state_dict()}, ckpt_path)
+            elif meta_iteration - best_iter > stop_iters:
+                print_log(prefix_str+metrics_str, log_path)
+                exit()
+            else:
+                print_log(prefix_str+metrics_str, log_path)

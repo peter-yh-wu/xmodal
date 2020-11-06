@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import sys
+import random
 import pickle
 import torch
 import torch.nn.functional as F
@@ -298,26 +299,31 @@ class AbstractMetaTwo(object):
         return train_task, test_task
 
 
+def get_recipe_data():
+    data_dir = '../data/recipe'
+    fid_to_label = load_pkl(os.path.join(data_dir, 'fid_to_label.pkl'))
+    fid_to_text = load_pkl(os.path.join(data_dir, 'fid_to_text.pkl'))
+    fids = sorted(list(fid_to_label.keys()))
+    label_list = sorted(list(set(fid_to_label.values())))
+    label_to_int = {}
+    for i, label in enumerate(label_list):
+        label_to_int[label] = i
+    paths1 = [os.path.join(data_dir, 'new_imgs', '%s.npy' % fid) for fid in fids]
+    targets = [label_to_int[fid_to_label[fid]] for fid in fids]
+    num_labels = len(np.unique(targets))
+    paths2 = [os.path.join(data_dir, 'text_embs', '%s.npy' % fid) for fid in fids]
+    return num_labels, paths1, paths2, targets
+
+
 class MetaFolderTwo(AbstractMetaTwo):
     '''dataset for recipe task'''
     def __init__(self, *args, **kwargs):
-        data_dir = '../data/recipe'
-        fid_to_label = load_pkl(os.path.join(data_dir, 'fid_to_label.pkl'))
-        fid_to_text = load_pkl(os.path.join(data_dir, 'fid_to_text.pkl'))
-        fids = sorted(list(fid_to_label.keys()))
-        label_list = sorted(list(set(fid_to_label.values())))
-        label_to_int = {}
-        for i, label in enumerate(label_list):
-            label_to_int[label] = i
-        paths = [os.path.join(data_dir, 'new_imgs', '%s.npy' % fid) for fid in fids]
-        targets = [label_to_int[fid_to_label[fid]] for fid in fids]
-        num_labels = len(np.unique(targets))
+        num_labels, paths1, paths2, targets = get_recipe_data()
         grouped_x1s = [[] for _ in range(num_labels)]
-        for path, target in zip(paths, targets):
+        for path, target in zip(paths1, targets):
             grouped_x1s[target].append(path)
-        paths = [os.path.join(data_dir, 'text_embs', '%s.npy' % fid) for fid in fids]
         grouped_x2s = [[] for _ in range(num_labels)]
-        for path, target in zip(paths, targets):
+        for path, target in zip(paths2, targets):
             grouped_x2s[target].append(path)
         AbstractMetaTwo.__init__(self, grouped_x1s, grouped_x2s, None, *args, **kwargs)
 
@@ -388,3 +394,41 @@ def split_meta_both(all_meta, train=0.8, validation=0.1, test=0.1, seed=0, batch
         return train, val, test, super_train
     else:
         return train, val, test
+
+
+class ImageDataset(Dataset):
+    def __init__(self, phase):
+        num_labels, paths1, paths2, targets = get_recipe_data()
+        self.num_classes = num_labels
+        self.paths1 = paths1
+        self.targets = targets
+        idxs = [i for i in range(len(self.paths1))]
+        random.Random(0).shuffle(idxs)
+        self.paths1 = [self.paths1[i] for i in idxs]
+        self.targets = [self.targets[i] for i in idxs]
+        num_train = int(0.9*len(self.targets))
+        if phase == 'train':
+            self.paths1 = self.paths1[:num_train]
+            self.targets = self.targets[:num_train]
+        else:
+            self.paths1 = self.paths1[num_train:]
+            self.targets = self.targets[num_train:]
+    
+    def __len__(self):
+        return len(self.targets)
+    
+    def __getitem__(self, index):
+        return np.load(self.paths1[index]), self.targets[index]
+
+
+def mk_dataloader(phase, mode='default', batch_size=64, shuffle=True, num_workers=4):
+    # parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    # data_dir = os.path.join(parent_dir, 'data')
+    
+    # label_to_int_path = os.path.join(data_dir, 'label_to_int.pkl')
+    # label_to_int = load_pkl(label_to_int_path)
+    
+    dataset = ImageDataset(phase)
+    dataloader = DataLoader(dataset, batch_size=batch_size,
+        shuffle=shuffle, num_workers=num_workers)
+    return dataset.num_classes, dataloader
