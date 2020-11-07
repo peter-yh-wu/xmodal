@@ -249,14 +249,14 @@ def train_clf_1(net, loss_fn, optimizer, train_iter, iterations, print_train=Fal
             pred = out.data.max(1, keepdim=True)[1]
             matchings = pred.eq(base_y.data.view_as(pred).type(torch.cuda.LongTensor))
             correct = correct + matchings.sum()
-            total_samples = total_samples + x1.size()[0]
+            total_samples = total_samples + len(base_y)
             print(iteration, ' ', loss, ' ', correct/total_samples)
         losses.append(loss.item())
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-    val_acc = float(correct)/total_samples
     if print_train:
+        val_acc = float(correct)/total_samples
         return np.mean(losses), val_acc
     else:
         return np.mean(losses)
