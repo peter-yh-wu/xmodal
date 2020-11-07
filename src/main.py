@@ -249,7 +249,7 @@ def train_clf_1(net, loss_fn, optimizer, train_iter, iterations, print_train=Fal
             pred = out.data.max(1, keepdim=True)[1]
             matchings = pred.eq(base_y.data.view_as(pred).type(torch.cuda.LongTensor))
             correct = correct + matchings.sum()
-            total_samples = total_samples + x.size()[0]
+            total_samples = total_samples + x1.size()[0]
             print(iteration, ' ', loss, ' ', correct/total_samples)
         losses.append(loss.item())
         optimizer.zero_grad()
@@ -330,7 +330,7 @@ def eval_clf_2(net, loss_fn, test_iter, iterations):
             pred = out.data.max(1, keepdim=True)[1]
             matchings = pred.eq(base_y.data.view_as(pred).type(torch.cuda.LongTensor))
             correct = correct + matchings.sum()
-            total_samples = total_samples + x.size()[0]   
+            total_samples = total_samples + x2.size()[0]   
     val_acc = float(correct)/total_samples
     return np.mean(losses), val_acc
 
@@ -349,7 +349,7 @@ def eval_clf_1(net, loss_fn, test_iter, iterations):
             pred = out.data.max(1, keepdim=True)[1]
             matchings = pred.eq(base_y.data.view_as(pred).type(torch.cuda.LongTensor))
             correct = correct + matchings.sum()
-            total_samples = total_samples + x.size()[0]
+            total_samples = total_samples + x1.size()[0]
     val_acc = float(correct)/total_samples
     return np.mean(losses), val_acc
 
@@ -512,6 +512,7 @@ if not args.no_pre:
         for (meta_dataset, mode) in [(align_train, 'train'), (align_val, 'val'), (align_test, 'test')]:
             mode = 'meta_'+mode
             curr_idx_dict = idx_dict[mode]
+            # print(curr_idx_dict)
             meta_losses = []
             meta_accuracies = []
             for task_idx_dict in curr_idx_dict:
