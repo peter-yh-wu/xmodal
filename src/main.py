@@ -537,7 +537,7 @@ if not args.no_pre:
             metrics.append(meta_train_loss)
             metrics.append(np.mean(meta_losses))
             metrics.append(np.mean(meta_accuracies))
-        prefix_str = 'pretrain clf 1\t'
+        prefix_str = '-1 clf 1\t'
         metrics_str = ' '.join(['%.4f' % f for f in metrics])
         print_log(prefix_str+metrics_str, log_path)
 
@@ -667,7 +667,7 @@ else:
                 metrics.append(meta_train_loss)
                 metrics.append(np.mean(meta_losses))
                 metrics.append(np.mean(meta_accuracies))
-            prefix_str = '%d clf 1\t' % meta_iteration
+            prefix_str = '%02d clf 1\t' % meta_iteration
             metrics_str = ' '.join(['%.4f' % f for f in metrics])
             if metrics[-1] > best_metric:
                 print_log(prefix_str+metrics_str+suffix_str, log_path)
