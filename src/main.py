@@ -428,7 +428,7 @@ if args.merge:
 if args.merge0:
     expt_str += '-merge0'
 if args.reptile1:
-    expt_str += '-reptile1'
+    expt_str += '-reptile1_%s' % args.mode
 if args.no_meta_1:
     expt_str += '-no_meta_1_%s' % args.mode
 if args.eval_tasks == -1:

@@ -16,9 +16,15 @@ class ImageEncoder(nn.Module):
         if mode == '152':
             self.model = torchvision.models.resnet152(pretrained=True)
             self.model.fc = nn.Linear(2048, output_dim)
-        else:
+        elif mode == '18':
             self.model = torchvision.models.resnet18(pretrained=True)
             self.model.fc = nn.Linear(512, output_dim)
+        elif mode == 'nop18':
+            self.model = torchvision.models.resnet18(pretrained=False)
+            self.model.fc = nn.Linear(512, output_dim)
+        else:
+            self.model = torchvision.models.resnet152(pretrained=False)
+            self.model.fc = nn.Linear(2048, output_dim)
 
     def forward(self, x):
         x = self.model(x)
