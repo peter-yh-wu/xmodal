@@ -1,3 +1,4 @@
+import argparse
 import json
 import numpy as np
 import os
@@ -24,7 +25,11 @@ def load_pkl(path):
 
 
 def main():
-    min_data = 64 # 100
+    parser = argparse.ArgumentParser('preprocess recipe')
+    parser.add_argument('--min-data', type=int, help='min data', default=100)
+    args = parser.parse_args()
+
+    min_data = args.min_data
 
     data_dir = '../data/recipe'
     fid_to_label_path = os.path.join(data_dir, 'fid_to_label.pkl')
@@ -72,9 +77,9 @@ def main():
         print('original stdev labels per class: %d' % std_labels)
 
         label_set = set(new_label_dict.keys())
-        curr_label_counts = {} # {l:0 for l in sorted(list(label_set))}
-        max_labels = mean_labels+std_labels/2
-        max_labels = min(max_labels, 8*min_data)
+        curr_label_counts = {}
+        max_labels = mean_labels+std_labels
+        # max_labels = min(max_labels, 8*min_data)
         print('capping at %d' % max_labels)
 
         fids = sorted(list(fid_to_label.keys()))
@@ -84,8 +89,8 @@ def main():
         new_fid_to_text = {}
         for fid in fids:
             label = fid_to_label[fid]
-            if label in label_set and new_label_dict[label] <= max_labels:
-                # if label in label_set and curr_label_counts[label] <= max_labels:
+            # if label in label_set and new_label_dict[label] <= max_labels:
+            if label in label_set and (label not in curr_label_counts or curr_label_counts[label] <= max_labels):
                 if label in curr_label_counts:
                     curr_label_counts[label] += 1
                 else:

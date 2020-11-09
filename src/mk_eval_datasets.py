@@ -2,7 +2,7 @@
 
 Assumes
     train_K == 5 (can change via argument)
-    test_K == 10 (i.e. use all test data)
+    test_K == 10
     N == 5 (number of unique classes in each task)
 
 Chose num_eval_tasks = 8
@@ -141,6 +141,7 @@ def split_meta(all_meta, train=0.8, validation=0.1, test=0.1, split_idxs_path=No
 def main():
     parser = argparse.ArgumentParser('')
     parser.add_argument('--seed', type=int, help='random seed', default=0)
+    parser.add_argument('-n', default=5, type=int, help='number of unique classes/labels per tasks')
     parser.add_argument('--train-shots', default=5, type=int, help='Train shots')
     parser.add_argument('--test-shots', default=10, type=int, help='Train shots')
     parser.add_argument('--train', default=0.7, type=float, help='Percentage of train')
@@ -157,7 +158,7 @@ def main():
     idx_dir = '../data/recipe/idxs'
     if not os.path.exists(idx_dir):
         os.makedirs(idx_dir)
-    idx_dict_path = os.path.join(idx_dir, 'idx_dict_%d_%d_%d.npy' % (args.train_shots, args.eval_tasks, args.seed))
+    idx_dict_path = os.path.join(idx_dir, 'idx_dict_%d_%d_%d_%d.npy' % (args.n, args.train_shots, args.eval_tasks, args.seed))
     print(idx_dict_path)
     split_idxs_path = os.path.join(idx_dir, 'split_idxs_%d.npy' % args.seed)
     # if os.path.exists(split_idxs_path) and os.path.exists(idx_dict_path):
@@ -168,21 +169,21 @@ def main():
 
     idx_dict = {'meta_train': [], 'meta_val': [], 'meta_test': []}
     for _ in range(args.eval_tasks):
-        character_indices, all_curr_idxs, new_train_idxs, new_test_idxs = meta_train.get_idxs(train_K=args.train_shots, test_K=args.test_shots)
+        character_indices, all_curr_idxs, new_train_idxs, new_test_idxs = meta_train.get_idxs(N=args.n, train_K=args.train_shots, test_K=args.test_shots)
         idx_dict['meta_train'].append({
             'character_indices': character_indices,
             'all_curr_idxs': all_curr_idxs,
             'new_train_idxs': new_train_idxs,
             'new_test_idxs': new_test_idxs
         })
-        character_indices, all_curr_idxs, new_train_idxs, new_test_idxs = meta_val.get_idxs(train_K=args.train_shots, test_K=args.test_shots)
+        character_indices, all_curr_idxs, new_train_idxs, new_test_idxs = meta_val.get_idxs(N=args.n, train_K=args.train_shots, test_K=args.test_shots)
         idx_dict['meta_val'].append({
             'character_indices': character_indices,
             'all_curr_idxs': all_curr_idxs,
             'new_train_idxs': new_train_idxs,
             'new_test_idxs': new_test_idxs
         })
-        character_indices, all_curr_idxs, new_train_idxs, new_test_idxs = meta_test.get_idxs(train_K=args.train_shots, test_K=args.test_shots, verbose=args.verbose)
+        character_indices, all_curr_idxs, new_train_idxs, new_test_idxs = meta_test.get_idxs(N=args.n, train_K=args.train_shots, test_K=args.test_shots, verbose=args.verbose)
         idx_dict['meta_test'].append({
             'character_indices': character_indices,
             'all_curr_idxs': all_curr_idxs,

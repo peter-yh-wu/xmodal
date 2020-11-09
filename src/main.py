@@ -159,7 +159,7 @@ parser.add_argument('--batch-size', default=256, type=int, help='number of epoch
 parser.add_argument('--mode', default="18", type=str, help='mode')
 
 # few shot args
-parser.add_argument('--classes', default=5, type=int, help='classes in base-task (N-way)')
+parser.add_argument('-n', '--classes', default=5, type=int, help='classes in base-task (N-way)')
 parser.add_argument('--train-shots', default=5, type=int, help='(train) shots per class (K-shot)')
 parser.add_argument('--meta-iterations', default=100000, type=int, help='number of meta iterations')
 parser.add_argument('--start-meta-iteration', default=0, type=int, help='start iteration')
@@ -502,7 +502,7 @@ if args.load and os.path.exists(ckpt_path):
     meta_optimizer.load_state_dict(loaded_states['optim'])
 
 if not args.no_meta_1 and not args.no_meta_2:
-    idx_dict_path = os.path.join(idx_dir, 'idx_dict_%d_%d_%d.npy' % (args.train_shots, args.eval_tasks, args.iseed))
+    idx_dict_path = os.path.join(idx_dir, 'idx_dict_%d_%d_%d_%d.npy' % (args.n, args.train_shots, args.eval_tasks, args.iseed))
     print(idx_dict_path)
     idx_dict = np.load(idx_dict_path, allow_pickle=True)
     idx_dict = idx_dict[()]

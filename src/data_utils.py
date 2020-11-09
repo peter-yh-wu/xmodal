@@ -282,7 +282,7 @@ class AbstractMetaTwo(object):
         return train_task, test_task
 
     def get_random_task(self, N=5, K=1, is_align=True):
-        train_task, __ = self.get_random_task_split(N, train_K=K, test_K=0, is_align=is_align)
+        train_task, __ = self.get_random_task_split(N=N, train_K=K, test_K=0, is_align=is_align)
         return train_task
 
     def get_random_task_split(self, N=5, train_K=4, test_K=2, is_align=True, verbose=False):
