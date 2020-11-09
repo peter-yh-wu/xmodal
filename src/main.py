@@ -447,11 +447,11 @@ else:
 print_log(log_path, log_path)
 
 if args.no_meta_1:
-    num_classes, train_loader = mk_dataloader_1('train', batch_size=args.batch_size, num_workers=1)
-    _, test_loader = mk_dataloader_1('test', batch_size=args.batch_size, num_workers=1, shuffle=False)
+    num_classes, train_loader = mk_dataloader_1('train', batch_size=args.batch_size, num_workers=args.num_workers)
+    _, test_loader = mk_dataloader_1('test', batch_size=args.batch_size, num_workers=args.num_workers, shuffle=False)
 elif args.no_meta_2:
-    num_classes, train_loader = mk_dataloader_2('train', batch_size=args.batch_size, num_workers=1)
-    _, test_loader = mk_dataloader_2('test', batch_size=args.batch_size, num_workers=1, shuffle=False)
+    num_classes, train_loader = mk_dataloader_2('train', batch_size=args.batch_size, num_workers=args.num_workers)
+    _, test_loader = mk_dataloader_2('test', batch_size=args.batch_size, num_workers=args.num_workers, shuffle=False)
 else:
     idx_dir = '../data/recipe/idxs'
 
