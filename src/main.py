@@ -20,8 +20,8 @@ from torch import nn
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
 
-from data_utils import MetaFolderTwo, split_meta_both, r_at_k, np_transform, collate_recipe, mk_dataloader
-from models import AEMetaModel, MergedMetaModel, MetaModel, TextEncoder, ImageEncoder, ImageClf
+from data_utils import MetaFolderTwo, split_meta_both, r_at_k, np_transform, collate_recipe, mk_dataloader_1, mk_dataloader_2
+from models import AEMetaModel, MergedMetaModel, MetaModel, TextEncoder, ImageEncoder, ImageClf, TextClf
 
 
 def cmap_map(function, cmap):
@@ -445,8 +445,11 @@ else:
 print_log(log_path, log_path)
 
 if args.no_meta_1:
-    num_classes, train_loader = mk_dataloader('train', batch_size=args.batch_size, num_workers=1)
-    _, test_loader = mk_dataloader('test', batch_size=args.batch_size, num_workers=1, shuffle=False)
+    num_classes, train_loader = mk_dataloader_1('train', batch_size=args.batch_size, num_workers=1)
+    _, test_loader = mk_dataloader_1('test', batch_size=args.batch_size, num_workers=1, shuffle=False)
+elif args.no_meta_2:
+    num_classes, train_loader = mk_dataloader_2('train', batch_size=args.batch_size, num_workers=1)
+    _, test_loader = mk_dataloader_2('test', batch_size=args.batch_size, num_workers=1, shuffle=False)
 else:
     idx_dir = '../data/recipe/idxs'
 
@@ -469,6 +472,8 @@ elif args.merge:
     meta_net = MergedMetaModel(fc_dim, args.classes, vocab_size, emb_mat, args.cuda)
 elif args.no_meta_1:
     meta_net = ImageClf(fc_dim, num_classes, mode=args.mode)
+elif args.no_meta_2:
+    meta_net = TextClf(fc_dim, num_classes, mode=args.mode)
 else:
     enc1 = ImageEncoder(fc_dim)
     enc2 = TextEncoder(fc_dim)
@@ -482,7 +487,7 @@ text_clf_state = None
 align_state = None
 if args.do_super:
     super_optimizer = torch.optim.Adam(meta_net.parameters(), lr=args.lr_align)
-elif args.no_meta_1:
+elif args.no_meta_1 or args.no_meta_2:
     no_meta_optimizer = torch.optim.Adam(meta_net.parameters(), lr=args.lr_clf)
 
 if args.load and os.path.exists(ckpt_path):
@@ -490,7 +495,7 @@ if args.load and os.path.exists(ckpt_path):
     meta_net.load_state_dict(loaded_states['model'])
     meta_optimizer.load_state_dict(loaded_states['optim'])
 
-if not args.no_meta_1:
+if not args.no_meta_1 and not args.no_meta_2:
     idx_dict_path = os.path.join(idx_dir, 'idx_dict_%d_%d_%d.npy' % (args.train_shots, args.eval_tasks, args.iseed))
     print(idx_dict_path)
     idx_dict = np.load(idx_dict_path, allow_pickle=True)
@@ -507,7 +512,7 @@ stop_iters = 25*args.validate_every
 
 # evaluate clf 1 (image for recipe, audio for wld)
 if not args.no_pre:
-    if args.no_meta_1:
+    if args.no_meta_1 or args.no_meta_2:
         loss, metrics = eval_no_meta(meta_net, cross_entropy, test_loader, args)
         prefix_str = '-1 clf 1\t'
         print('                trainl traina loss   acc    prec   rec    f1')
@@ -531,13 +536,17 @@ if not args.no_pre:
                 val_iter = make_infinite(DataLoader(val, args.batch, collate_fn=collate_fn, num_workers=args.num_workers))
                 net = meta_net.clone()
                 optimizer = get_optimizer(net, args.lr_clf)
-                if args.print_train:
-                    meta_train_loss, meta_train_acc = train_clf_1(net, cross_entropy, optimizer, train_iter, args.test_iterations, args.print_train)
-                    print(meta_train_loss, meta_train_acc)
-                else:
-                    meta_train_loss = train_clf_1(net, cross_entropy, optimizer, train_iter, args.test_iterations, args.print_train)
                 num_iter = int(math.ceil(len(val)/args.batch))
-                meta_loss, meta_accuracy = eval_clf_1(net, cross_entropy, val_iter, num_iter)
+                if not args.reptile2:
+                    if args.print_train:
+                        meta_train_loss, meta_train_acc = train_clf_1(net, cross_entropy, optimizer, train_iter, args.test_iterations, args.print_train)
+                        print(meta_train_loss, meta_train_acc)
+                    else:
+                        meta_train_loss = train_clf_1(net, cross_entropy, optimizer, train_iter, args.test_iterations, args.print_train)
+                    meta_loss, meta_accuracy = eval_clf_1(net, cross_entropy, val_iter, num_iter)
+                else:
+                    pass
+                    # TODO
                 meta_losses.append(meta_loss)
                 meta_accuracies.append(meta_accuracy)
             metrics.append(meta_train_loss)
@@ -553,7 +562,7 @@ if not args.no_pre:
 if args.do_super:
     super_train = make_infinite(super_train)
 
-if args.no_meta_1:
+if args.no_meta_1 or args.no_meta_2:
     best_epoch = -1
     for epoch in range(args.epochs):
         train_loss, train_metrics = train_no_meta(meta_net, cross_entropy, train_loader, no_meta_optimizer, args)
@@ -588,7 +597,7 @@ else:
                 loss, acc = train_clf_1(net, cross_entropy, optimizer, train_iter, args.iterations, print_train=args.print_train)
             else:
                 loss = train_clf_1(net, cross_entropy, optimizer, train_iter, args.iterations, print_train=args.print_train)
-                print(loss) # TODO comment out
+                # print(loss) # TODO toggle comment to debug
             audio_clf_state = optimizer.state_dict()
             meta_net.point_grad_to(net)
             meta_optimizer.step()

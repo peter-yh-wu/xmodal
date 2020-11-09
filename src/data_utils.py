@@ -109,6 +109,20 @@ def collate_recipe(batch):
     return torch.tensor(x1s), torch.tensor(y1s), torch.tensor(x2s), torch.tensor(y2s)
 
 
+def collate_text(batch):
+    '''collate function for recipe task'''
+    x2s = []
+    y2s = []
+    max_len_2 = 0
+    for (x2, _) in batch:
+        max_len_2 = max(len(x2), max_len_2)
+    for (x2, y2) in batch:
+        x2 = np.pad(x2, ((0,max_len_2-len(x2)), (0,0)), mode='constant', constant_values=0.0)
+        x2s.append(x2)
+        y2s.append(y2)
+    return torch.tensor(x2s), torch.tensor(y2s)
+
+
 class FewShotTwo(Dataset):
     '''
     Dataset for K-shot N-way classification for 2 modalities
@@ -457,14 +471,39 @@ class ImageDataset(Dataset):
         return np.load(self.paths1[index]), self.targets[index]
 
 
-def mk_dataloader(phase, mode='default', batch_size=64, shuffle=True, num_workers=4):
-    # parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    # data_dir = os.path.join(parent_dir, 'data')
+class TextDataset(Dataset):
+    def __init__(self, phase):
+        num_labels, paths1, paths2, targets = get_recipe_data()
+        self.num_classes = num_labels
+        self.paths2 = paths2
+        self.targets = targets
+        idxs = [i for i in range(len(self.paths2))]
+        random.Random(0).shuffle(idxs)
+        self.paths2 = [self.paths2[i] for i in idxs]
+        self.targets = [self.targets[i] for i in idxs]
+        num_train = int(0.9*len(self.targets))
+        if phase == 'train':
+            self.paths2 = self.paths2[:num_train]
+            self.targets = self.targets[:num_train]
+        else:
+            self.paths2 = self.paths2[num_train:]
+            self.targets = self.targets[num_train:]
     
-    # label_to_int_path = os.path.join(data_dir, 'label_to_int.pkl')
-    # label_to_int = load_pkl(label_to_int_path)
+    def __len__(self):
+        return len(self.targets)
     
+    def __getitem__(self, index):
+        return np.load(self.paths2[index]), self.targets[index]
+
+
+def mk_dataloader_1(phase, mode='default', batch_size=64, shuffle=True, num_workers=4):
     dataset = ImageDataset(phase)
     dataloader = DataLoader(dataset, batch_size=batch_size,
+        shuffle=shuffle, num_workers=num_workers)
+    return dataset.num_classes, dataloader
+
+def mk_dataloader_2(phase, mode='default', batch_size=64, shuffle=True, num_workers=4):
+    dataset = TextDataset(phase)
+    dataloader = DataLoader(dataset, batch_size=batch_size, collate_fn=collate_text,
         shuffle=shuffle, num_workers=num_workers)
     return dataset.num_classes, dataloader

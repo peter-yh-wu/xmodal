@@ -67,6 +67,18 @@ class TextEncoder(nn.Module):
         return output
 
 
+class TextClf(nn.Module):
+    def __init__(self, emb_dim, output_dim, mode='default'):
+        nn.Module.__init__(self)
+        self.encoder = TextEncoder(emb_dim)
+        self.clf = nn.Sequential(nn.ReLU(), nn.Linear(emb_dim, output_dim))
+    
+    def forward(self, x):
+        x = self.encoder(x)
+        x = self.clf(x)
+        return x
+
+
 class SpeechEncoder(nn.Module):
     def __init__(self, num_classes, input_size=40):
         nn.Module.__init__(self)
