@@ -551,7 +551,7 @@ if not args.no_pre:
                         meta_train_loss = train_clf_1(net, cross_entropy, optimizer, train_iter, args.test_iterations, args.print_train)
                     meta_loss, meta_accuracy = eval_clf_1(net, cross_entropy, val_iter, num_iter)
                 else:
-                    meta_train_loss = train_clf_2(net, cross_entropy, optimizer, train_iter, args.test_iterations, args.print_train)
+                    meta_train_loss = train_clf_2(net, cross_entropy, optimizer, train_iter, args.test_iterations)
                     meta_loss, meta_accuracy = eval_clf_2(net, cross_entropy, val_iter, num_iter)
                 meta_losses.append(meta_loss)
                 meta_accuracies.append(meta_accuracy)
