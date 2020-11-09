@@ -436,8 +436,12 @@ if args.merge0:
     expt_str += '-merge0'
 if args.reptile1:
     expt_str += '-reptile1_%s' % args.mode
+if args.reptile2:
+    expt_str += '-reptile2'
 if args.no_meta_1:
     expt_str += '-no_meta_1_%s' % args.mode
+if args.no_meta_2:
+    expt_str += '-no_meta_2'
 if args.eval_tasks == -1:
     log_path = os.path.join(log_dir, 'log_k-%d_mlr-%s_lrc-%s_lra-%s_tab-%d_s-%d-%d%s.txt' % (args.train_shots, mlr_str, lrc_str, lra_str, args.train_align_batch, args.seed, args.iseed, expt_str))
     ckpt_path = os.path.join(log_dir, 'meta_k-%d_mlr-%s_lrc-%s_lra-%s_tab-%d_s-%d-%d%s.ckpt' % (args.train_shots, mlr_str, lrc_str, lra_str, args.train_align_batch, args.seed, args.iseed, expt_str))
@@ -547,8 +551,8 @@ if not args.no_pre:
                         meta_train_loss = train_clf_1(net, cross_entropy, optimizer, train_iter, args.test_iterations, args.print_train)
                     meta_loss, meta_accuracy = eval_clf_1(net, cross_entropy, val_iter, num_iter)
                 else:
-                    pass
-                    # TODO
+                    meta_train_loss = train_clf_2(net, cross_entropy, optimizer, train_iter, args.test_iterations, args.print_train)
+                    meta_loss, meta_accuracy = eval_clf_2(net, cross_entropy, val_iter, num_iter)
                 meta_losses.append(meta_loss)
                 meta_accuracies.append(meta_accuracy)
             metrics.append(meta_train_loss)
@@ -680,9 +684,13 @@ else:
                     val_iter = make_infinite(DataLoader(val, args.batch, shuffle=False, collate_fn=collate_fn, num_workers=args.num_workers))
                     net = meta_net.clone()
                     optimizer = get_optimizer(net, args.lr_clf)
-                    meta_train_loss = train_clf_1(net, cross_entropy, optimizer, train_iter, args.test_iterations)
                     num_iter = int(math.ceil(len(val)/args.batch))
-                    meta_loss, meta_accuracy = eval_clf_1(net, cross_entropy, val_iter, num_iter)
+                    if not args.reptile2:
+                        meta_train_loss = train_clf_1(net, cross_entropy, optimizer, train_iter, args.test_iterations)
+                        meta_loss, meta_accuracy = eval_clf_1(net, cross_entropy, val_iter, num_iter)
+                    else:
+                        meta_train_loss = train_clf_2(net, cross_entropy, optimizer, train_iter, args.test_iterations)
+                        meta_loss, meta_accuracy = eval_clf_2(net, cross_entropy, val_iter, num_iter)
                     meta_losses.append(meta_loss)
                     meta_accuracies.append(meta_accuracy)
                 metrics.append(meta_train_loss)
