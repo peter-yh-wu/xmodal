@@ -24,7 +24,7 @@ def load_pkl(path):
 
 
 def main():
-    min_data = 100
+    min_data = 64 # 100
 
     data_dir = '../data/recipe'
     fid_to_label_path = os.path.join(data_dir, 'fid_to_label.pkl')
@@ -72,8 +72,9 @@ def main():
         print('original stdev labels per class: %d' % std_labels)
 
         label_set = set(new_label_dict.keys())
-        curr_label_counts = {l:0 for l in sorted(list(label_set))}
-        max_labels = mean_labels+std_labels
+        curr_label_counts = {} # {l:0 for l in sorted(list(label_set))}
+        max_labels = mean_labels+std_labels/2
+        max_labels = min(max_labels, 8*min_data)
         print('capping at %d' % max_labels)
 
         fids = sorted(list(fid_to_label.keys()))
@@ -83,11 +84,16 @@ def main():
         new_fid_to_text = {}
         for fid in fids:
             label = fid_to_label[fid]
-            if label in label_set and curr_label_counts[label] <= max_labels:
-                curr_label_counts[label] += 1
+            if label in label_set and new_label_dict[label] <= max_labels:
+                # if label in label_set and curr_label_counts[label] <= max_labels:
+                if label in curr_label_counts:
+                    curr_label_counts[label] += 1
+                else:
+                    curr_label_counts[label] = 1
                 new_fid_to_label[fid] = label
                 new_fid_to_text[fid] = fid_to_text[fid]
         new_label_counts = sorted(list(curr_label_counts.values()))
+        print('now %d Classes' % len(new_label_counts))
         print('now %d Datapoints' % np.sum(new_label_counts))
         print('new mean labels per class:  %d' % np.mean(new_label_counts))
         print('new stdev labels per class: %d' % np.std(new_label_counts))

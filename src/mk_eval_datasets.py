@@ -160,8 +160,8 @@ def main():
     idx_dict_path = os.path.join(idx_dir, 'idx_dict_%d_%d_%d.npy' % (args.train_shots, args.eval_tasks, args.seed))
     print(idx_dict_path)
     split_idxs_path = os.path.join(idx_dir, 'split_idxs_%d.npy' % args.seed)
-    if os.path.exists(split_idxs_path) and os.path.exists(idx_dict_path):
-        exit()
+    # if os.path.exists(split_idxs_path) and os.path.exists(idx_dict_path):
+    #     exit()
 
     all_meta = MetaFolder()
     meta_train, meta_val, meta_test = split_meta(all_meta, args.train, split_idxs_path=split_idxs_path)

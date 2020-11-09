@@ -137,6 +137,7 @@ parser.add_argument('--seed', type=int, help='random seed', default=0)
 parser.add_argument('--iseed', type=int, help='idx dict random seed', default=-1)
 parser.add_argument('--load', action='store_true', help='load from ckpt', default=False)
 parser.add_argument('--no-save', action='store_true', help='dont save model', default=False)
+parser.add_argument('--no-eval', action='store_true', help='dont evaluate', default=False)
 parser.add_argument('--reptile1', action='store_true', help='unimodal meta learning', default=False)
 parser.add_argument('--train1', action='store_true', help='train test modality', default=False)
 parser.add_argument('--no-meta-1', action='store_true', help='clf1 with no meta learning', default=False)
@@ -237,6 +238,8 @@ def train_ae(net, loss_fn, optimizer, train_iter, iterations, teacher_forcing_ra
 
 
 def train_clf_1(net, loss_fn, optimizer, train_iter, iterations, print_train=False):
+    if print_train:
+        print('-------')
     losses = []
     correct = 0
     total_samples = 0
@@ -250,14 +253,16 @@ def train_clf_1(net, loss_fn, optimizer, train_iter, iterations, print_train=Fal
             matchings = pred.eq(base_y.data.view_as(pred).type(torch.cuda.LongTensor))
             correct = correct + matchings.sum()
             total_samples = total_samples + len(base_y)
-            print(iteration, ' ', loss, ' ', correct/total_samples)
+            print(loss)
+            # print(matchings.sum())
+            # print(iteration, ' ', loss, ' ', loss.item())
         losses.append(loss.item())
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
     if print_train:
-        val_acc = float(correct)/total_samples
-        return np.mean(losses), val_acc
+        acc = float(correct)/total_samples
+        return np.mean(losses), acc
     else:
         return np.mean(losses)
 
@@ -470,7 +475,8 @@ else:
     meta_net = MetaModel(enc1, enc2, fc_dim, args.classes, args.cuda)
 if torch.cuda.is_available():
     meta_net = meta_net.cuda(args.cuda)
-meta_optimizer = torch.optim.SGD(meta_net.parameters(), lr=args.meta_lr)
+# meta_optimizer = torch.optim.SGD(meta_net.parameters(), lr=args.meta_lr)
+meta_optimizer = torch.optim.Adam(meta_net.parameters(), lr=1e-4)
 audio_clf_state = None
 text_clf_state = None
 align_state = None
@@ -566,19 +572,23 @@ else:
     suffix_str = ' <'
     for meta_iteration in range(args.start_meta_iteration, args.meta_iterations):
         # Update learning rate
+        '''TODO i commented this out
         if not args.do_super:
             meta_lr = args.meta_lr * (1. - meta_iteration/float(args.meta_iterations))
             set_learning_rate(meta_optimizer, meta_lr)
+        '''
 
         if args.reptile1 or args.train1:
             net = meta_net.clone()
             optimizer = get_optimizer(net, args.lr_clf, audio_clf_state)
             train = align_train.get_random_task(args.classes, args.train_shots, is_align=False)
+            # train = align_train.get_dummy_task(args.classes, args.train_shots, is_align=False)
             train_iter = make_infinite(DataLoader(train, args.batch, shuffle=True, collate_fn=collate_fn, num_workers=args.num_workers))
             if args.print_train:
                 loss, acc = train_clf_1(net, cross_entropy, optimizer, train_iter, args.iterations, print_train=args.print_train)
             else:
                 loss = train_clf_1(net, cross_entropy, optimizer, train_iter, args.iterations, print_train=args.print_train)
+                print(loss) # TODO comment out
             audio_clf_state = optimizer.state_dict()
             meta_net.point_grad_to(net)
             meta_optimizer.step()
@@ -605,7 +615,7 @@ else:
             meta_net.point_grad_to(net)
             meta_optimizer.step()
 
-        # train text clf
+        # train clf 2
         if not args.reptile1 and not args.ae and not args.merge:
             net = meta_net.clone()
             optimizer = get_optimizer(net, args.lr_clf, text_clf_state)
@@ -630,7 +640,7 @@ else:
                 super_optimizer.zero_grad()
                 loss.backward()
                 super_optimizer.step()
-        elif not args.reptile1 and not args.ae and not args.merge and not args.merge0:
+        elif not args.reptile1 and not args.ae and not args.merge and not args.merge0 and not args.reptile2:
             net = meta_net.clone()
             optimizer = get_optimizer(net, args.lr_align, align_state)
             train = align_train.get_random_task(args.classes, args.train_shots, is_align=True)
@@ -640,7 +650,7 @@ else:
             meta_net.point_grad_to(net)
             meta_optimizer.step()
 
-        if meta_iteration % args.validate_every == 0:
+        if meta_iteration % args.validate_every == 0 and not args.no_eval:
             # evaluate clf 1
             metrics = []
             # for (meta_dataset, mode) in [(align_test, 'test')]: # [(align_train, 'train'), (align_val, 'val'), (align_test, 'test')]:

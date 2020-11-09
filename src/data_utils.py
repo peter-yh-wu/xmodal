@@ -231,6 +231,42 @@ class AbstractMetaTwo(object):
     def __getitem__(self, idx):
         return self.grouped_x1s[idx], self.grouped_x2s[idx]
 
+    def get_dummy_task(self, N=5, K=1, is_align=True):
+        '''for testing only'''
+        train_task, __ = self.get_dummy_task_split(N, train_K=K, test_K=0, is_align=is_align)
+        return train_task
+    
+    def get_dummy_task_split(self, N=5, train_K=4, test_K=2, is_align=True, verbose=False):
+        '''for testing only'''
+        train_samples1 = []
+        test_samples1 = []
+        train_samples2 = []
+        test_samples2 = []
+        character_indices = [i for i in range(N)] # what makes it dummy
+        for base_idx, idx in enumerate(character_indices):
+            x1s = self.grouped_x1s[idx]
+            x2s = self.grouped_x2s[idx]
+            if self.align_idxs is None:
+                curr_idxs1 = np.random.choice(len(x1s), train_K + test_K, replace=False)
+            elif is_align:
+                curr_idxs1 = np.random.choice(self.align_idxs[idx], train_K + test_K, replace=False)
+            else:
+                curr_idxs1 = np.random.choice(self.non_align_idxs[idx], train_K + test_K, replace=False)
+            for i, x1_idx in enumerate(curr_idxs1):
+                x1 = x1s[x1_idx]
+                x2 = x2s[x1_idx]
+                new_x1 = {'x':x1, 'y':idx, 'base_idx':base_idx}
+                new_x2 = {'x':x2, 'y':idx, 'base_idx':base_idx}
+                if i < train_K:
+                    train_samples1.append(new_x1)
+                    train_samples2.append(new_x2)
+                else:
+                    test_samples1.append(new_x1)
+                    test_samples2.append(new_x2)
+        train_task = FewShotTwo(train_samples1, train_samples2, parent=self)
+        test_task = FewShotTwo(test_samples1, test_samples2, parent=self, verbose=verbose)
+        return train_task, test_task
+
     def get_random_task(self, N=5, K=1, is_align=True):
         train_task, __ = self.get_random_task_split(N, train_K=K, test_K=0, is_align=is_align)
         return train_task
