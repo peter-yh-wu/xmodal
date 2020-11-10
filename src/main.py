@@ -487,7 +487,7 @@ else:
 if torch.cuda.is_available():
     meta_net = meta_net.cuda(args.cuda)
 # meta_optimizer = torch.optim.SGD(meta_net.parameters(), lr=args.meta_lr)
-meta_optimizer = torch.optim.Adam(meta_net.parameters(), lr=1e-4)
+meta_optimizer = torch.optim.Adam(meta_net.parameters(), lr=args.meta_lr)
 audio_clf_state = None
 text_clf_state = None
 align_state = None
@@ -526,7 +526,8 @@ if not args.no_pre:
         print_log(prefix_str+metrics_str, log_path)
     else:
         metrics = []
-        for (meta_dataset, mode) in [(align_train, 'train'), (align_val, 'val'), (align_test, 'test')]:
+        # for (meta_dataset, mode) in [(align_train, 'train'), (align_val, 'val'), (align_test, 'test')]:
+        for (meta_dataset, mode) in [(align_train, 'train'), (align_test, 'test')]:
             mode = 'meta_'+mode
             curr_idx_dict = idx_dict[mode]
             # print(curr_idx_dict)
