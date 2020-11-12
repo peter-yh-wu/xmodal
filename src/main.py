@@ -138,18 +138,8 @@ parser.add_argument('--iseed', type=int, help='idx dict random seed', default=-1
 parser.add_argument('--load', action='store_true', help='load from ckpt', default=False)
 parser.add_argument('--no-save', action='store_true', help='dont save model', default=False)
 parser.add_argument('--no-eval', action='store_true', help='dont evaluate', default=False)
-parser.add_argument('--reptile1', action='store_true', help='unimodal meta learning 1', default=False)
-parser.add_argument('--reptile2', action='store_true', help='unimodal meta learning 2', default=False)
-parser.add_argument('--train1', action='store_true', help='train test modality', default=False)
-parser.add_argument('--no-meta-1', action='store_true', help='clf1 with no meta learning', default=False)
-parser.add_argument('--no-meta-2', action='store_true', help='clf2 with no meta learning', default=False)
-parser.add_argument('--ae', action='store_true', help='autoencoder', default=False)
-parser.add_argument('--no-pre', action='store_true', help='dont record untrained model performance', default=False)
 parser.add_argument('--print-train', action='store_true', help='print train metrics', default=False)
 parser.add_argument('--verbose', action='store_true', help='print extra info', default=False)
-parser.add_argument('--do-super', action='store_true', help='supervised alignment', default=False)
-parser.add_argument('--merge', action='store_true', help='same encoder for both modalities', default=False)
-parser.add_argument('--merge0', action='store_true', help='merge but no metatrain test modality', default=False)
 parser.add_argument('--cuda', default=0, type=int, help='cuda device')
 parser.add_argument('--num-workers', default=4, type=int, help='cuda device')
 parser.add_argument('--margin', default=0.1, type=float, help='margin in loss fn')
@@ -157,6 +147,18 @@ parser.add_argument('--tfr', default=0.5, type=float, help='teacher forcing rati
 parser.add_argument('--epochs', default=100, type=int, help='number of epochs')
 parser.add_argument('--batch-size', default=256, type=int, help='number of epochs')
 parser.add_argument('--mode', default="18", type=str, help='mode')
+
+parser.add_argument('--no-meta-1', action='store_true', help='clf1 with no meta learning', default=False)
+parser.add_argument('--no-meta-2', action='store_true', help='clf2 with no meta learning', default=False)
+parser.add_argument('--reptile1', action='store_true', help='unimodal meta learning 1', default=False)
+parser.add_argument('--reptile2', action='store_true', help='unimodal meta learning 2', default=False)
+parser.add_argument('--train1', action='store_true', help='train test modality', default=False)
+parser.add_argument('--ae', action='store_true', help='autoencoder', default=False)
+parser.add_argument('--no-pre', action='store_true', help='dont record untrained model performance', default=False)
+parser.add_argument('--do-super', action='store_true', help='supervised alignment', default=False)
+parser.add_argument('--merge', action='store_true', help='same encoder for both modalities', default=False)
+parser.add_argument('--merge0', action='store_true', help='merge but no metatrain test modality', default=False)
+# NOTE merge & merge0 not applicable to recipe task
 
 # few shot args
 parser.add_argument('-n', '--classes', default=5, type=int, help='classes in base-task (N-way)')
@@ -430,6 +432,8 @@ lra_str = format_e(Decimal(args.lr_align))
 expt_str = '-%d-%d' % (args.iterations, args.test_iterations)
 if args.do_super:
     expt_str += '-sup'
+if args.ae:
+    expt_str += '-ae'
 if args.merge:
     expt_str += '-merge'
 if args.merge0:
@@ -471,10 +475,9 @@ cross_entropy = nn.CrossEntropyLoss()
 
 fc_dim = 128
 if args.ae:
-    # TODO
     meta_net = AEMetaModel(fc_dim, args.classes, args.cuda)
 elif args.merge:
-    # TODO
+    # NOTE: not supported for recipe task
     meta_net = MergedMetaModel(fc_dim, args.classes, vocab_size, emb_mat, args.cuda)
 elif args.no_meta_1:
     meta_net = ImageClf(fc_dim, num_classes, mode=args.mode)

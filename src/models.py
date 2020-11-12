@@ -160,6 +160,40 @@ class LSTMDecoder(nn.Module):
         return pred, h, c
 
 
+class ImageDecoder(nn.Module):
+    def __init__(self, input_dim):
+        super().__init__()
+        self.dfc3 = nn.Linear(input_dim, 4096)
+        self.dfc2 = nn.Linear(4096, 4096)
+        self.dfc1 = nn.Linear(4096, 256 * 6 * 6)
+        self.upsample1 = nn.Upsample(scale_factor=2)
+        self.dconv5 = nn.ConvTranspose2d(256, 256, 3, padding=0)
+        self.dconv4 = nn.ConvTranspose2d(256, 384, 3, padding=1)
+        self.dconv3 = nn.ConvTranspose2d(384, 192, 3, padding=1)
+        self.dconv2 = nn.ConvTranspose2d(192, 64, 5, padding=2)
+        self.dconv1 = nn.ConvTranspose2d(64, 3, 12, stride=4, padding=4)
+
+    def forward(self, x):
+        x = self.dfc3(x)
+        x = F.relu(x)
+        x = self.dfc2(x)
+        x = F.relu(x)
+        x = self.dfc1(x)
+        x = F.relu(x)
+        x = x.view(-1, 256, 6, 6)
+        x = self.upsample1(x)
+        x = self.dconv5(x)
+        x = F.relu(x)
+        x = F.relu(self.dconv4(x))
+        x = F.relu(self.dconv3(x))
+        x=self.upsample1(x)
+        x = self.dconv2(x)
+        x = F.relu(x)
+        x=self.upsample1(x)
+        x = self.dconv1(x)
+        return x
+
+
 class ReptileModel(nn.Module):
 
     def __init__(self, device):
@@ -180,7 +214,53 @@ class ReptileModel(nn.Module):
         return next(self.parameters()).is_cuda
 
 
-class AEMetaModel(ReptileModel):
+class AEMetaModel(ReptileModel): # TODO
+    def __init__(self, fc_dim, num_classes, device):
+        ReptileModel.__init__(self, device)
+        self.fc_dim = fc_dim
+        self.num_classes = num_classes
+        self.encoder = ImageEncoder(fc_dim)
+        self.num_feats = 40
+        self.decoder = ImageDecoder(fc_dim)
+        self.classifier = nn.Sequential(
+            nn.ReLU(),
+            nn.Linear(fc_dim, num_classes)
+        )
+    
+    def forward_ae(self, x, teacher_forcing_ratio=0.5):
+        '''
+        Args:
+            x: (batch_size, seq_len, num_feats)
+            teacher_forcing_ratio: probability to use teacher forcing
+                e.g. if teacher_forcing_ratio is 0.75 we use ground-truth 
+                inputs 75% of the time
+        
+        Return:
+            outputs: shape (batch_size, seq_len, num_feats)
+        '''
+        x = self.encoder(x)
+        x = self.decoder(x)
+        return x
+
+    def forward1(self, x):
+        out = self.encoder(x)
+        out = self.classifier(out)
+        return out
+
+    def forward(self, x):
+        out = self.encoder(x)
+        out = self.classifier(out)
+        return out
+
+    def clone(self):
+        clone = AEMetaModel(self.fc_dim, self.num_classes, self.device)
+        clone.load_state_dict(self.state_dict())
+        if self.is_cuda():
+            clone.cuda(self.device)
+        return clone
+
+
+class WldAEMetaModel(ReptileModel):
     def __init__(self, fc_dim, num_classes, device):
         ReptileModel.__init__(self, device)
         self.fc_dim = fc_dim
@@ -336,3 +416,12 @@ class MetaModel(ReptileModel):
         if self.is_cuda():
             clone.cuda(self.device)
         return clone
+
+
+if __name__ == "__main__":
+    m = AEMetaModel(128, 10, 0)
+    m.eval()
+    x = torch.randn(1, 3, 224, 224)
+    with torch.no_grad():
+        x = m.encoder(x) # 1, 128
+        x = m.decoder(x)
