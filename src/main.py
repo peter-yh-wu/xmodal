@@ -77,8 +77,10 @@ def tri_loss(out1, out2, ys, margin=0.1):
         y = y.cpu().item()
         if y in y_counts:
             y_counts[y] += 1
-            o1s[y] += o1
-            o2s[y] += o2
+            # o1s[y] += o1
+            # o2s[y] += o2
+            o1s[y] = o1s[y] + o1
+            o2s[y] = o2s[y] + o2
         else:
             y_counts[y] = 1
             o1s[y] = o1
