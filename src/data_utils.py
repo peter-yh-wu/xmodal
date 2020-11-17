@@ -56,6 +56,30 @@ def r_at_k(embs1, embs2):
     return (r1, r5, r10, r50, r100, medr)
 
 
+def mk_retrieve(embs1, embs2, ys):
+    """embs1->embs2 Retrieval
+
+    Args:
+        embs1: embeddings, np array with shape (num_data, emb_dim)
+            where num_data is either number of dev or test datapoints
+        embs2: embeddings, np array with shape shape (num_data, emb_dim)
+    """
+    all_ranks = []
+    ranks = np.zeros(len(embs1))
+    mnorms = np.sqrt(np.sum(embs1**2,axis=1)[None]).T
+    embs1 = embs1 / mnorms
+    tnorms = np.sqrt(np.sum(embs2**2,axis=1)[None]).T
+    embs2 = embs2 / tnorms
+
+    for index in range(len(embs1)):
+        im = embs1[index:index+1, :]
+        d = np.dot(im, embs2.T)
+        inds = np.zeros(d.shape)
+        inds[0] = np.argsort(d[0])[::-1]
+        all_ranks.append(inds[0])
+    return all_ranks
+
+
 image_preprocess = transforms.Compose([
     transforms.Resize(256),
     transforms.CenterCrop(224),
@@ -109,6 +133,26 @@ def collate_recipe(batch):
     return torch.tensor(x1s), torch.tensor(y1s), torch.tensor(x2s), torch.tensor(y2s)
 
 
+def collate_recipe_verbose(batch):
+    '''collate function for recipe task'''
+    x1s = []
+    y1s = []
+    x2s = []
+    y2s = []
+    idxs = []
+    max_len_2 = 0
+    for (_, _, x2, _, _) in batch:
+        max_len_2 = max(len(x2), max_len_2)
+    for (x1, y1, x2, y2, idx) in batch:
+        x1s.append(x1)
+        y1s.append(y1)
+        x2 = np.pad(x2, ((0,max_len_2-len(x2)), (0,0)), mode='constant', constant_values=0.0)
+        x2s.append(x2)
+        y2s.append(y2)
+        idxs.append(idx)
+    return torch.tensor(x1s), torch.tensor(y1s), torch.tensor(x2s), torch.tensor(y2s), torch.tensor(idxs)
+
+
 def collate_text(batch):
     '''collate function for recipe task'''
     x2s = []
@@ -132,6 +176,9 @@ class FewShotTwo(Dataset):
         self.x2s = x2s
         self.parent = parent
         self.verbose = verbose
+        if verbose: # assumes x1s & x2s are paths
+            self.x1_ids = [x['x'] for x in x1s]
+            self.x2_ids = [x['x'] for x in x2s]
 
     def __len__(self):
         return len(self.x1s)
@@ -147,13 +194,16 @@ class FewShotTwo(Dataset):
             x2 = orig_x2
         y1 = self.x1s[idx]['y']
         y2 = self.x2s[idx]['base_idx']
-        if self.verbose:
-            print('x: ', orig_x2, ', y: ', y1, ', base_idx: ', y2)
+        # if self.verbose:
+        #     print('x: ', orig_x2, ', y: ', y1, ', base_idx: ', y2)
         if self.parent.transform_y1 is not None:
             y1 = self.parent.transform_y1(y1)
         if self.parent.transform_y2 is not None:
             y2 = self.parent.transform_y2(y2)
-        return x1, y1, x2, y2
+        if self.verbose:
+            return x1, y1, x2, y2, idx
+        else:
+            return x1, y1, x2, y2
 
 
 class BothDataset(Dataset):
@@ -312,8 +362,12 @@ class AbstractMetaTwo(object):
                     test_samples1.append(new_x1)
                     test_samples2.append(new_x2)
         train_task = FewShotTwo(train_samples1, train_samples2, parent=self)
-        test_task = FewShotTwo(test_samples1, test_samples2, parent=self, verbose=verbose)
-        return train_task, test_task
+        if verbose:
+            test_task = FewShotTwo(test_samples1, test_samples2, parent=self, verbose=verbose)
+            return train_task, test_task, test_task.x1_ids, test_task.x2_ids
+        else:
+            test_task = FewShotTwo(test_samples1, test_samples2, parent=self, verbose=verbose)
+            return train_task, test_task
 
     def get_task_split(self, character_indices, all_curr_idxs,
                         new_train_idxs,
@@ -401,7 +455,7 @@ def split_meta_both(all_meta, train=0.8, validation=0.1, test=0.1, seed=0, batch
         all_train = [l[:int(len(l)*new_train_frac)] for l in all_train]
     all_val = [all_meta[i] for i in indices[-(n_val+n_test):-n_test]]
     all_test = [all_meta[i] for i in indices[-n_test:]]
-    print(indices[-n_test:])
+    print('test', indices[-n_test:])
 
     train_x1s = [e[0] for e in all_train]
     val_x1s = [e[0] for e in all_val]

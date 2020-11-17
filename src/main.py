@@ -20,7 +20,7 @@ from torch import nn
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
 
-from data_utils import MetaFolderTwo, split_meta_both, r_at_k, np_transform, collate_recipe, mk_dataloader_1, mk_dataloader_2
+from data_utils import MetaFolderTwo, split_meta_both, r_at_k, mk_retrieve, np_transform, collate_recipe, collate_recipe_verbose, mk_dataloader_1, mk_dataloader_2
 from models import AEMetaModel, MergedMetaModel, MetaModel, TextEncoder, ImageEncoder, ImageClf, TextClf
 
 
@@ -149,6 +149,9 @@ parser.add_argument('--tfr', default=0.5, type=float, help='teacher forcing rati
 parser.add_argument('--epochs', default=100, type=int, help='number of epochs')
 parser.add_argument('--batch-size', default=256, type=int, help='number of epochs')
 parser.add_argument('--mode', default="18", type=str, help='mode')
+parser.add_argument('--retrieve', action='store_true', help='retrieval', default=False)
+parser.add_argument('--rk', action='store_true', help='r@k', default=False)
+parser.add_argument('--examples', action='store_true', help='make examples', default=False)
 
 parser.add_argument('--no-meta-1', action='store_true', help='clf1 with no meta learning', default=False)
 parser.add_argument('--no-meta-2', action='store_true', help='clf2 with no meta learning', default=False)
@@ -310,21 +313,24 @@ def eval_align_r(net, loss_fn, test_iter, iterations, margin=0.1):
     losses = []
     net.eval()
     with torch.no_grad():
-        y1s = []
-        all_transformed_audio_embs = []
-        all_transformed_text_embs = []
+        ys = []
+        idxs = []
+        embs1 = []
+        embs2 = []
         for iteration in range(iterations):
-            x1, y1, x2, base_y = Variable_(next(test_iter))
-            y1s.append(y1.cpu().numpy())
+            x1, _, x2, base_y, idx = Variable_(next(test_iter))
+            ys.append(base_y.cpu().numpy())
+            idxs.append(idx.cpu().numpy())
             o1, o2 = net.forward_align(x1, x2)
-            all_transformed_audio_embs.append(o1.cpu().numpy())
-            all_transformed_text_embs.append(o2.cpu().numpy())
+            embs1.append(o1.cpu().numpy())
+            embs2.append(o2.cpu().numpy())
             loss = loss_fn(o1, o2, base_y, margin=margin)
             losses.append(loss.item())
-        y1s = np.concatenate(y1s, axis=0)
-        all_transformed_audio_embs = np.concatenate(all_transformed_audio_embs, axis=0)
-        all_transformed_text_embs = np.concatenate(all_transformed_text_embs, axis=0)
-    return np.mean(losses), y1s, all_transformed_audio_embs, all_transformed_text_embs
+        ys = np.concatenate(ys, axis=0)
+        idxs = np.concatenate(idxs, axis=0)
+        embs1 = np.concatenate(embs1, axis=0)
+        embs2 = np.concatenate(embs2, axis=0)
+    return np.mean(losses), ys, idxs, embs1, embs2
 
 
 def eval_clf_2(net, loss_fn, test_iter, iterations):
@@ -363,6 +369,33 @@ def eval_clf_1(net, loss_fn, test_iter, iterations):
             total_samples = total_samples + x1.size()[0]
     val_acc = float(correct)/total_samples
     return np.mean(losses), val_acc
+
+
+def eval_clf_1_e(net, test_iter, iterations):
+    net.eval()
+    with torch.no_grad():
+        ys = []
+        base_ys = []
+        idxs = []
+        all_matchings = []
+        preds = []
+        for iteration in range(iterations):
+            x1, y, _, base_y, idx = Variable_(next(test_iter))
+            ys.append(y.cpu().numpy())
+            base_ys.append(base_y.cpu().numpy())
+            idxs.append(idx.cpu().numpy())
+            out = net.forward1(x1)
+            pred = out.data.max(1, keepdim=True)[1]
+            preds.append(pred.cpu().numpy()[:, 0])
+            matchings = pred.eq(base_y.data.view_as(pred).type(torch.cuda.LongTensor))
+            matchings = matchings.cpu().int().numpy()[:,0]
+            all_matchings.append(matchings)
+        ys = np.concatenate(ys, axis=0)
+        base_ys = np.concatenate(base_ys, axis=0)
+        idxs = np.concatenate(idxs, axis=0)
+        all_matchings = np.concatenate(all_matchings, axis=0)
+        preds = np.concatenate(preds, axis=0)
+    return ys, base_ys, idxs, all_matchings, preds
 
 
 def train_no_meta(net, loss_fn, loader, optimizer, args):
@@ -466,6 +499,7 @@ else:
     idx_dir = '../data/recipe/idxs'
 
     collate_fn = collate_recipe
+    collate_fn_verbose = collate_recipe_verbose
     all_meta = MetaFolderTwo(transform_x1=np_transform, transform_x2=np_transform)
 
     if args.do_super:
@@ -501,10 +535,14 @@ if args.do_super:
 elif args.no_meta_1 or args.no_meta_2:
     no_meta_optimizer = torch.optim.Adam(meta_net.parameters(), lr=args.lr_clf)
 
-if args.load and os.path.exists(ckpt_path):
-    loaded_states = torch.load(ckpt_path)
-    meta_net.load_state_dict(loaded_states['model'])
-    meta_optimizer.load_state_dict(loaded_states['optim'])
+if args.load:
+    if os.path.exists(ckpt_path):
+        loaded_states = torch.load(ckpt_path)
+        meta_net.load_state_dict(loaded_states['model'])
+        meta_optimizer.load_state_dict(loaded_states['optim'])
+        print('loaded model')
+    else:
+        print('ckpt doesnt exist')
 
 if not args.no_meta_1 and not args.no_meta_2:
     idx_dict_path = os.path.join(idx_dir, 'idx_dict_%d_%d_%d_%d.npy' % (args.classes, args.train_shots, args.eval_tasks, args.iseed))
@@ -568,6 +606,90 @@ if not args.no_pre:
         metrics_str = ' '.join(['%.4f' % f for f in metrics])
         print_log(prefix_str+metrics_str, log_path)
 
+
+# retrieval
+if args.retrieve or args.rk or args.examples:
+    base_enc1 = ImageEncoder(fc_dim)
+    base_enc2 = TextEncoder(fc_dim)
+    base_net = MetaModel(base_enc1, base_enc2, fc_dim, args.classes, args.cuda)
+    if torch.cuda.is_available():
+        base_net = base_net.cuda(args.cuda)
+    if args.examples:
+        save_dir = 'examples'
+    else:
+        save_dir = 'retrieval_results'
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+    for (meta_dataset, mode) in [(align_test, 'test')]:
+        retrieve_models = [(meta_net, 'ours'), (base_net, 'base')]
+        if not args.examples:
+            losses = {n:[] for (_, n) in retrieve_models}
+            r1s = {n:[] for (_, n) in retrieve_models}
+            r5s = {n:[] for (_, n) in retrieve_models}
+            r10s = {n:[] for (_, n) in retrieve_models}
+            medrs = {n:[] for (_, n) in retrieve_models}
+        else:
+            pass
+        for task_i in range(16):
+            print(task_i)
+            train, val, val_x1_ids, val_x2_ids = meta_dataset.get_random_task_split(N=args.classes, train_K=args.train_shots, test_K=10, verbose=True)
+            model_to_matchings = {n:[] for (_, n) in retrieve_models}
+            model_to_ys = {n:[] for (_, n) in retrieve_models}
+            model_to_base_ys = {n:[] for (_, n) in retrieve_models}
+            model_to_preds = {n:[] for (_, n) in retrieve_models}
+            for (curr_net, model_type) in retrieve_models:
+                train_iter = make_infinite(DataLoader(train, args.batch, shuffle=True, collate_fn=collate_fn, num_workers=1))
+                val_iter = make_infinite(DataLoader(val, 1, shuffle=False, collate_fn=collate_fn_verbose, num_workers=1))
+                net = curr_net.clone()
+                optimizer = get_optimizer(net, args.lr_align, align_state)
+                meta_train_loss = train_align(net, align_loss, optimizer, train_iter, args.iterations, margin=args.margin)
+                num_iter = len(val)
+                if args.examples:
+                    ys, base_ys, idxs, all_matchings, preds = eval_clf_1_e(net, val_iter, num_iter)
+                    model_to_matchings[model_type] = all_matchings
+                    model_to_ys[model_type] = ys
+                    model_to_base_ys[model_type] = base_ys
+                    model_to_preds[model_type] = preds
+                else:
+                    meta_loss, ys, idxs, embs1, embs2 = eval_align_r(net, tri_loss, val_iter, num_iter)
+                    losses[model_type].append(meta_loss)
+                    if not args.rk:
+                        ranks = mk_retrieve(embs2, embs1, ys)
+                        np.save(os.path.join(save_dir, 'ys_%d.npy' % (task_i)), ys)
+                        np.save(os.path.join(save_dir, 'ranks_%d_%s.npy' % (task_i, model_type)), ranks)
+                        x1_dir = os.path.join(save_dir, 'x1s_%d' % (task_i))
+                        if not os.path.exists(x1_dir):
+                            os.makedirs(x1_dir)
+                    (r1, r5, r10, _, _, medr) = r_at_k(embs2, embs1)
+                    r1s[model_type].append(r1)
+                    r5s[model_type].append(r5)
+                    r10s[model_type].append(r10)
+                    medrs[model_type].append(medr)
+            if not args.rk:
+                with open(os.path.join(save_dir, 'val_x1_ids_%d.txt' % task_i), 'w+') as ouf:
+                    for s in val_x1_ids:
+                        ouf.write('%s\n' % s)
+                with open(os.path.join(save_dir, 'val_x2_ids_%d.txt' % task_i), 'w+') as ouf:
+                    for s in val_x2_ids:
+                        ouf.write('%s\n' % s)
+            if args.examples:
+                with open(os.path.join(save_dir, 'matchings_%d.txt' % task_i), 'w+') as ouf:
+                    for (_, n) in retrieve_models:
+                        s = n+' ma\t'+str(model_to_matchings[n])
+                        ouf.write('%s\n' % s)
+                        s = n+' pr\t'+str(model_to_preds[n])
+                        ouf.write('%s\n' % s)
+                        s = n+' ys\t'+str(model_to_ys[n])
+                        ouf.write('%s\n' % s)
+                        s = n+' ba\t'+str(model_to_base_ys[n])
+                        ouf.write('%s\n' % s)
+        if not args.examples:
+            for (_, n) in retrieve_models:
+                print_log("%s R@1: %.1f%%,\tR@5:\t%.1f%%,\tR@10: %.1f%%,\tMedian Rank: %d,\tLoss: %.4f" %
+                            (n, np.mean(r1s[n]), np.mean(r5s[n]), np.mean(r10s[n]), np.mean(medrs[n]), np.mean(losses[n])), log_path)
+    exit()
+
+
 # -------------------
 # Main loop
 
@@ -593,7 +715,7 @@ else:
     suffix_str = ' <'
     for meta_iteration in range(args.start_meta_iteration, args.meta_iterations):
         # Update learning rate
-        '''TODO i commented this out
+        '''NOTE no longer using this
         if not args.do_super:
             meta_lr = args.meta_lr * (1. - meta_iteration/float(args.meta_iterations))
             set_learning_rate(meta_optimizer, meta_lr)
@@ -609,7 +731,6 @@ else:
                 loss, acc = train_clf_1(net, cross_entropy, optimizer, train_iter, args.iterations, print_train=args.print_train)
             else:
                 loss = train_clf_1(net, cross_entropy, optimizer, train_iter, args.iterations, print_train=args.print_train)
-                # print(loss) # TODO toggle comment to debug
             audio_clf_state = optimizer.state_dict()
             meta_net.point_grad_to(net)
             meta_optimizer.step()
