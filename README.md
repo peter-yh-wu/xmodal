@@ -1,4 +1,4 @@
-# Recipe Experiments
+# Learning in Low-resource Modalities via Cross-modal Generalization
 
  - ```cd src```
 
