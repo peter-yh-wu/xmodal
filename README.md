@@ -8,8 +8,8 @@ Correspondence to:
 
 ## Paper
 
-[**Towards Debiasing Sentence Representations**](https://arxiv.org/abs/2012.02813)<br>
-[Paul Pu Liang](http://www.cs.cmu.edu/~pliang/), [Peter Wu](http://www.cs.cmu.edu/~peterw1/), [Liu Ziyin](http://cat.phys.s.u-tokyo.ac.jp/~zliu/), [Louis-Philippe Morency](https://www.cs.cmu.edu/~morency/)<br>, and [Ruslan Salakhutdinov](https://www.cs.cmu.edu/~rsalakhu/)
+[**Cross-Modal Generalization: Learning in Low Resource Modalities via Meta-Alignment**](https://arxiv.org/abs/2012.02813)<br>
+[Paul Pu Liang](http://www.cs.cmu.edu/~pliang/), [Peter Wu](http://www.cs.cmu.edu/~peterw1/), [Liu Ziyin](http://cat.phys.s.u-tokyo.ac.jp/~zliu/), [Louis-Philippe Morency](https://www.cs.cmu.edu/~morency/), and [Ruslan Salakhutdinov](https://www.cs.cmu.edu/~rsalakhu/)<br>
 NeurIPS 2020 Workshop on Meta Learning
 
 ## Installation
