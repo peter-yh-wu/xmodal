@@ -12,7 +12,7 @@ Correspondence to:
 [Paul Pu Liang](http://www.cs.cmu.edu/~pliang/), [Peter Wu](http://www.cs.cmu.edu/~peterw1/), [Liu Ziyin](http://cat.phys.s.u-tokyo.ac.jp/~zliu/), [Louis-Philippe Morency](https://www.cs.cmu.edu/~morency/), and [Ruslan Salakhutdinov](https://www.cs.cmu.edu/~rsalakhu/)<br>
 NeurIPS 2020 Workshop on Meta Learning
 
-If you find this repository useful, please cite our paper
+If you find this repository useful, please cite our paper:
 ```
 @misc{liang2020crossmodal,
       title={Cross-Modal Generalization: Learning in Low Resource Modalities via Meta-Alignment}, 
