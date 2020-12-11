@@ -1,6 +1,35 @@
 # Cross-Modal Generalization: Learning in Low Resource Modalities via Meta-Alignment
 
-Code for the respective [paper](http://www.cs.cmu.edu/~peterw1/website_files/xmodal.pdf).
+> Pytorch implementation for cross-modal generalization across language, visual, and audio modalities.
+
+Correspondence to: 
+  - Paul Liang (pliang@cs.cmu.edu)
+  - Peter Wu (peterw1@cs.cmu.edu)
+
+## Paper
+
+[**Towards Debiasing Sentence Representations**](https://arxiv.org/abs/2012.02813)<br>
+[Paul Pu Liang](http://www.cs.cmu.edu/~pliang/), [Peter Wu](), [Liu Ziyin](), [Louis-Philippe Morency](https://www.cs.cmu.edu/~morency/)<br>, and [Ruslan Salakhutdinov](https://www.cs.cmu.edu/~rsalakhu/)
+ACL 2020
+
+## Installation
+
+First check that the requirements are satisfied:</br>
+Python 3.6</br>
+torch 1.2.0</br>
+huggingface transformers</br>
+numpy 1.18.1</br>
+sklearn 0.20.0</br>
+matplotlib 3.1.2</br>
+gensim 3.8.0 </br>
+tqdm 4.45.0</br>
+regex 2.5.77</br>
+pattern3</br>
+
+The next step is to clone the repository:
+```bash
+git clone https://github.com/peter-yh-wu/xmodal.git
+```
 
 ## Background
 
