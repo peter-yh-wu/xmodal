@@ -10,17 +10,16 @@ Correspondence to:
 
 [**Cross-Modal Generalization: Learning in Low Resource Modalities via Meta-Alignment**](https://arxiv.org/abs/2012.02813)<br>
 [Paul Pu Liang](http://www.cs.cmu.edu/~pliang/), [Peter Wu](http://www.cs.cmu.edu/~peterw1/), [Liu Ziyin](http://cat.phys.s.u-tokyo.ac.jp/~zliu/), [Louis-Philippe Morency](https://www.cs.cmu.edu/~morency/), and [Ruslan Salakhutdinov](https://www.cs.cmu.edu/~rsalakhu/)<br>
-NeurIPS 2020 Workshop on Meta Learning
+ACM Multimedia 2021, NeurIPS 2020 Workshop on Meta Learning
 
 If you find this repository useful, please cite our paper:
 ```
-@misc{liang2020crossmodal,
-      title={Cross-Modal Generalization: Learning in Low Resource Modalities via Meta-Alignment}, 
-      author={Paul Pu Liang and Peter Wu and Liu Ziyin and Louis-Philippe Morency and Ruslan Salakhutdinov},
-      year={2020},
-      eprint={2012.02813},
-      archivePrefix={arXiv},
-      primaryClass={cs.LG}
+@inproceedings{liang2021cross,
+  title={Cross-Modal Generalization: Learning in Low Resource Modalities via Meta-Alignment},
+  author={Liang, Paul Pu and Wu, Peter and Ziyin, Liu and Morency, Louis-Philippe and Salakhutdinov, Ruslan},
+  booktitle={Proceedings of the 29th ACM International Conference on Multimedia},
+  pages={2680--2689},
+  year={2021}
 }
 ```
 
